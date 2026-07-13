@@ -1,0 +1,122 @@
+{
+  "IMDb": {
+    "title.basics.tsv.gz": {
+      "initial_rows": 12639803,
+      "final_rows": 12639803,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "imdb_title_basics.parquet"
+    },
+    "title.ratings.tsv.gz": {
+      "initial_rows": 1694833,
+      "final_rows": 1694833,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "imdb_title_ratings.parquet"
+    },
+    "title.principals.tsv.gz": {
+      "initial_rows": 100415422,
+      "final_rows": 100415422,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "imdb_title_principals.parquet"
+    },
+    "title.crew.tsv.gz": {
+      "initial_rows": 12639803,
+      "final_rows": 12639803,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "imdb_title_crew.parquet"
+    },
+    "name.basics.tsv.gz": {
+      "initial_rows": 15483410,
+      "final_rows": 15483410,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "imdb_name_basics.parquet"
+    }
+  },
+  "MovieLens": {
+    "movies.csv": {
+      "initial_rows": 87585,
+      "final_rows": 87585,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 617,
+      "saved_parquet": "movielens_movies.parquet"
+    },
+    "ratings.csv": {
+      "initial_rows": 32000204,
+      "final_rows": 32000204,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "movielens_ratings.parquet"
+    },
+    "tags.csv": {
+      "initial_rows": 2000072,
+      "final_rows": 2000072,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "movielens_tags.parquet"
+    },
+    "links.csv": {
+      "initial_rows": 87585,
+      "final_rows": 87585,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "movielens_links.parquet"
+    }
+  },
+  "TMDb": {
+    "movies_metadata.csv": {
+      "initial_rows": 45466,
+      "final_rows": 45433,
+      "duplicates_removed": 33,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "tmdb_movies_metadata.parquet"
+    },
+    "credits.csv": {
+      "initial_rows": 45476,
+      "final_rows": 45432,
+      "duplicates_removed": 44,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "tmdb_credits.parquet"
+    },
+    "keywords.csv": {
+      "initial_rows": 46419,
+      "final_rows": 45432,
+      "duplicates_removed": 987,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "tmdb_keywords.parquet"
+    },
+    "links.csv": {
+      "initial_rows": 45843,
+      "final_rows": 45843,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "tmdb_links.parquet"
+    },
+    "links_small.csv": {
+      "initial_rows": 9125,
+      "final_rows": 9125,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "tmdb_links_small.parquet"
+    },
+    "ratings_small.csv": {
+      "initial_rows": 100004,
+      "final_rows": 100004,
+      "duplicates_removed": 0,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "tmdb_ratings_small.parquet"
+    }
+  },
+  "Wikipedia": {
+    "wiki_movie_plots_deduped.csv": {
+      "initial_rows": 34886,
+      "final_rows": 34070,
+      "duplicates_removed": 816,
+      "type_and_null_corrections": 0,
+      "saved_parquet": "wikipedia_movie_plots.parquet"
+    }
+  }
+}

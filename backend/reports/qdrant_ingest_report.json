@@ -1,0 +1,9 @@
+{
+  "status": "success",
+  "newly_ingested": 100,
+  "total_indexed": 100,
+  "elapsed_time_seconds": 6.31,
+  "collection_name": "movies",
+  "is_local_client": true,
+  "timestamp": "2026-07-13T18:43:49Z"
+}

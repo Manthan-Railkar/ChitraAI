@@ -1,0 +1,459 @@
+{
+  "title.basics.tsv.gz": {
+    "component_name": "imdb/title.basics.tsv.gz",
+    "row_count": 12639803,
+    "column_count": 9,
+    "schema": {
+      "tconst": "String",
+      "titleType": "String",
+      "primaryTitle": "String",
+      "originalTitle": "String",
+      "isAdult": "Int64",
+      "startYear": "Int64",
+      "endYear": "String",
+      "runtimeMinutes": "Int64",
+      "genres": "String"
+    },
+    "datatype_summary": {
+      "String": 6,
+      "Int64": 3
+    },
+    "missing_values": {
+      "tconst": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "titleType": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "primaryTitle": {
+        "count": 2,
+        "percentage": 0.0
+      },
+      "originalTitle": {
+        "count": 2,
+        "percentage": 0.0
+      },
+      "isAdult": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "startYear": {
+        "count": 1475381,
+        "percentage": 11.6725
+      },
+      "endYear": {
+        "count": 12480676,
+        "percentage": 98.7411
+      },
+      "runtimeMinutes": {
+        "count": 8107884,
+        "percentage": 64.1457
+      },
+      "genres": {
+        "count": 539782,
+        "percentage": 4.2705
+      }
+    },
+    "unique_values": {
+      "tconst": 12700108,
+      "titleType": 11,
+      "primaryTitle": 5616411,
+      "originalTitle": 5644315,
+      "isAdult": 2,
+      "startYear": 156,
+      "endYear": 100,
+      "runtimeMinutes": 1041,
+      "genres": 2394
+    },
+    "duplicate_statistics": {
+      "duplicate_count": 0,
+      "duplicate_percentage": 0.0
+    },
+    "estimated_memory_mb": 1174.5667,
+    "sample_records": [
+      {
+        "tconst": "tt0000001",
+        "titleType": "short",
+        "primaryTitle": "Carmencita",
+        "originalTitle": "Carmencita",
+        "isAdult": 0,
+        "startYear": 1894,
+        "endYear": null,
+        "runtimeMinutes": 1,
+        "genres": "Documentary,Short"
+      },
+      {
+        "tconst": "tt0000002",
+        "titleType": "short",
+        "primaryTitle": "Le clown et ses chiens",
+        "originalTitle": "Le clown et ses chiens",
+        "isAdult": 0,
+        "startYear": 1892,
+        "endYear": null,
+        "runtimeMinutes": 5,
+        "genres": "Animation,Short"
+      },
+      {
+        "tconst": "tt0000003",
+        "titleType": "short",
+        "primaryTitle": "Poor Pierrot",
+        "originalTitle": "Pauvre Pierrot",
+        "isAdult": 0,
+        "startYear": 1892,
+        "endYear": null,
+        "runtimeMinutes": 5,
+        "genres": "Animation,Comedy,Romance"
+      },
+      {
+        "tconst": "tt0000004",
+        "titleType": "short",
+        "primaryTitle": "Un bon bock",
+        "originalTitle": "Un bon bock",
+        "isAdult": 0,
+        "startYear": 1892,
+        "endYear": null,
+        "runtimeMinutes": 12,
+        "genres": "Animation,Short"
+      },
+      {
+        "tconst": "tt0000005",
+        "titleType": "short",
+        "primaryTitle": "Blacksmith Scene",
+        "originalTitle": "Blacksmith Scene",
+        "isAdult": 0,
+        "startYear": 1893,
+        "endYear": null,
+        "runtimeMinutes": 1,
+        "genres": "Short"
+      }
+    ]
+  },
+  "title.ratings.tsv.gz": {
+    "component_name": "imdb/title.ratings.tsv.gz",
+    "row_count": 1694833,
+    "column_count": 3,
+    "schema": {
+      "tconst": "String",
+      "averageRating": "Float64",
+      "numVotes": "Int64"
+    },
+    "datatype_summary": {
+      "String": 1,
+      "Float64": 1,
+      "Int64": 1
+    },
+    "missing_values": {
+      "tconst": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "averageRating": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "numVotes": {
+        "count": 0,
+        "percentage": 0.0
+      }
+    },
+    "unique_values": {
+      "tconst": 1694833,
+      "averageRating": 91,
+      "numVotes": 24598
+    },
+    "duplicate_statistics": {
+      "duplicate_count": 0,
+      "duplicate_percentage": 0.0
+    },
+    "estimated_memory_mb": 40.408,
+    "sample_records": [
+      {
+        "tconst": "tt0000001",
+        "averageRating": 5.7,
+        "numVotes": 2218
+      },
+      {
+        "tconst": "tt0000002",
+        "averageRating": 5.4,
+        "numVotes": 321
+      },
+      {
+        "tconst": "tt0000003",
+        "averageRating": 6.4,
+        "numVotes": 2355
+      },
+      {
+        "tconst": "tt0000004",
+        "averageRating": 5.1,
+        "numVotes": 193
+      },
+      {
+        "tconst": "tt0000005",
+        "averageRating": 6.2,
+        "numVotes": 3070
+      }
+    ]
+  },
+  "title.principals.tsv.gz": {
+    "component_name": "imdb/title.principals.tsv.gz",
+    "row_count": 100415422,
+    "column_count": 6,
+    "schema": {
+      "tconst": "String",
+      "ordering": "Int64",
+      "nconst": "String",
+      "category": "String",
+      "job": "String",
+      "characters": "String"
+    },
+    "datatype_summary": {
+      "String": 5,
+      "Int64": 1
+    },
+    "missing_values": {
+      "tconst": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "ordering": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "nconst": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "category": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "job": {
+        "count": 81124269,
+        "percentage": 80.7887
+      },
+      "characters": {
+        "count": 51383510,
+        "percentage": 51.1709
+      }
+    },
+    "unique_values": {
+      "tconst": 11472486,
+      "ordering": 75,
+      "nconst": 7099875,
+      "category": 13,
+      "job": 47104,
+      "characters": 4644437
+    },
+    "duplicate_statistics": {
+      "duplicate_count": 0,
+      "duplicate_percentage": 0.0
+    },
+    "estimated_memory_mb": 3884.172,
+    "sample_records": [
+      {
+        "tconst": "tt0000001",
+        "ordering": 1,
+        "nconst": "nm1588970",
+        "category": "self",
+        "job": null,
+        "characters": "[\"Self\"]"
+      },
+      {
+        "tconst": "tt0000001",
+        "ordering": 2,
+        "nconst": "nm0005690",
+        "category": "director",
+        "job": null,
+        "characters": null
+      },
+      {
+        "tconst": "tt0000001",
+        "ordering": 3,
+        "nconst": "nm0005690",
+        "category": "producer",
+        "job": "producer",
+        "characters": null
+      },
+      {
+        "tconst": "tt0000001",
+        "ordering": 4,
+        "nconst": "nm0374658",
+        "category": "cinematographer",
+        "job": "director of photography",
+        "characters": null
+      },
+      {
+        "tconst": "tt0000002",
+        "ordering": 1,
+        "nconst": "nm0721526",
+        "category": "director",
+        "job": null,
+        "characters": null
+      }
+    ]
+  },
+  "title.crew.tsv.gz": {
+    "component_name": "imdb/title.crew.tsv.gz",
+    "row_count": 12639803,
+    "column_count": 3,
+    "schema": {
+      "tconst": "String",
+      "directors": "String",
+      "writers": "String"
+    },
+    "datatype_summary": {
+      "String": 3
+    },
+    "missing_values": {
+      "tconst": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "directors": {
+        "count": 5599363,
+        "percentage": 44.2994
+      },
+      "writers": {
+        "count": 6226181,
+        "percentage": 49.2585
+      }
+    },
+    "unique_values": {
+      "tconst": 12700108,
+      "directors": 1031164,
+      "writers": 1500908
+    },
+    "duplicate_statistics": {
+      "duplicate_count": 0,
+      "duplicate_percentage": 0.0
+    },
+    "estimated_memory_mb": 229.6336,
+    "sample_records": [
+      {
+        "tconst": "tt0000001",
+        "directors": "nm0005690",
+        "writers": null
+      },
+      {
+        "tconst": "tt0000002",
+        "directors": "nm0721526",
+        "writers": null
+      },
+      {
+        "tconst": "tt0000003",
+        "directors": "nm0721526",
+        "writers": "nm0721526"
+      },
+      {
+        "tconst": "tt0000004",
+        "directors": "nm0721526",
+        "writers": null
+      },
+      {
+        "tconst": "tt0000005",
+        "directors": "nm0005690",
+        "writers": null
+      }
+    ]
+  },
+  "name.basics.tsv.gz": {
+    "component_name": "imdb/name.basics.tsv.gz",
+    "row_count": 15483410,
+    "column_count": 6,
+    "schema": {
+      "nconst": "String",
+      "primaryName": "String",
+      "birthYear": "Int64",
+      "deathYear": "Int64",
+      "primaryProfession": "String",
+      "knownForTitles": "String"
+    },
+    "datatype_summary": {
+      "String": 4,
+      "Int64": 2
+    },
+    "missing_values": {
+      "nconst": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "primaryName": {
+        "count": 91,
+        "percentage": 0.0006
+      },
+      "birthYear": {
+        "count": 14806134,
+        "percentage": 95.6258
+      },
+      "deathYear": {
+        "count": 15222709,
+        "percentage": 98.3163
+      },
+      "primaryProfession": {
+        "count": 3129551,
+        "percentage": 20.2123
+      },
+      "knownForTitles": {
+        "count": 1862756,
+        "percentage": 12.0307
+      }
+    },
+    "unique_values": {
+      "nconst": 15392961,
+      "primaryName": 11896787,
+      "birthYear": 566,
+      "deathYear": 511,
+      "primaryProfession": 26323,
+      "knownForTitles": 6358397
+    },
+    "duplicate_statistics": {
+      "duplicate_count": 0,
+      "duplicate_percentage": 0.0
+    },
+    "estimated_memory_mb": 1543.9466,
+    "sample_records": [
+      {
+        "nconst": "nm0000001",
+        "primaryName": "Fred Astaire",
+        "birthYear": 1899,
+        "deathYear": 1987,
+        "primaryProfession": "actor,miscellaneous,producer",
+        "knownForTitles": "tt0072308,tt0050419,tt0027125,tt0025164"
+      },
+      {
+        "nconst": "nm0000002",
+        "primaryName": "Lauren Bacall",
+        "birthYear": 1924,
+        "deathYear": 2014,
+        "primaryProfession": "actress,miscellaneous,soundtrack",
+        "knownForTitles": "tt0037382,tt0075213,tt0038355,tt0117057"
+      },
+      {
+        "nconst": "nm0000003",
+        "primaryName": "Brigitte Bardot",
+        "birthYear": 1934,
+        "deathYear": 2025,
+        "primaryProfession": "actress,music_department,producer",
+        "knownForTitles": "tt0057345,tt0049189,tt0056404,tt0054452"
+      },
+      {
+        "nconst": "nm0000004",
+        "primaryName": "John Belushi",
+        "birthYear": 1949,
+        "deathYear": 1982,
+        "primaryProfession": "actor,writer,music_department",
+        "knownForTitles": "tt0072562,tt0077975,tt0080455,tt0078723"
+      },
+      {
+        "nconst": "nm0000005",
+        "primaryName": "Ingmar Bergman",
+        "birthYear": 1918,
+        "deathYear": 2007,
+        "primaryProfession": "writer,director,actor",
+        "knownForTitles": "tt0050986,tt0069467,tt0050976,tt0083922"
+      }
+    ]
+  }
+}

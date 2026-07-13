@@ -1,0 +1,12 @@
+{
+  "total_canonical_movies": 621701,
+  "imdb_source_rows": 613023,
+  "tmdb_source_rows": 45433,
+  "movielens_source_rows": 87585,
+  "wikipedia_source_rows": 34070,
+  "overlap_imdb_tmdb": 90019,
+  "overlap_imdb_movielens": 87613,
+  "overlap_imdb_wiki": 18212,
+  "movies_with_ratings": 613286,
+  "movies_with_plots": 56441
+}

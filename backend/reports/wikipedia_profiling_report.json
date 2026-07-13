@@ -1,0 +1,122 @@
+{
+  "wiki_movie_plots_deduped.csv": {
+    "component_name": "wikipedia/wiki_movie_plots_deduped.csv",
+    "row_count": 34886,
+    "column_count": 8,
+    "schema": {
+      "Release Year": "Int64",
+      "Title": "String",
+      "Origin/Ethnicity": "String",
+      "Director": "String",
+      "Cast": "String",
+      "Genre": "String",
+      "Wiki Page": "String",
+      "Plot": "String"
+    },
+    "datatype_summary": {
+      "Int64": 1,
+      "String": 7
+    },
+    "missing_values": {
+      "Release Year": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "Title": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "Origin/Ethnicity": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "Director": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "Cast": {
+        "count": 1422,
+        "percentage": 4.0761
+      },
+      "Genre": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "Wiki Page": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "Plot": {
+        "count": 0,
+        "percentage": 0.0
+      }
+    },
+    "unique_values": {
+      "Release Year": 117,
+      "Title": 32432,
+      "Origin/Ethnicity": 24,
+      "Director": 12593,
+      "Cast": 32183,
+      "Genre": 2265,
+      "Wiki Page": 34070,
+      "Plot": 33869
+    },
+    "duplicate_statistics": {
+      "duplicate_count": 0,
+      "duplicate_percentage": 0.0
+    },
+    "estimated_memory_mb": 33.6655,
+    "sample_records": [
+      {
+        "Release Year": 1901,
+        "Title": "Kansas Saloon Smashers",
+        "Origin/Ethnicity": "American",
+        "Director": "Unknown",
+        "Cast": null,
+        "Genre": "unknown",
+        "Wiki Page": "https://en.wikipedia.org/wiki/Kansas_Saloon_Smashers",
+        "Plot": "A bartender is working at a saloon, serving drinks to customers. After he fills a stereotypically Irish man's bucket with beer, Carrie Nation and her followers burst inside. They assault the Irish man, pulling his hat over his eyes and then dumping the beer over his head. The group then begin wrecking the bar, smashing the fixtures, mirrors, and breaking the cash register. The bartender then sprays seltzer water in Nation's face before a group of policemen appear and order everybody to leave.[1]"
+      },
+      {
+        "Release Year": 1901,
+        "Title": "Love by the Light of the Moon",
+        "Origin/Ethnicity": "American",
+        "Director": "Unknown",
+        "Cast": null,
+        "Genre": "unknown",
+        "Wiki Page": "https://en.wikipedia.org/wiki/Love_by_the_Light_of_the_Moon",
+        "Plot": "The moon, painted with a smiling face hangs over a park at night. A young couple walking past a fence learn on a railing and look up. The moon smiles. They embrace, and the moon's smile gets bigger. They then sit down on a bench by a tree. The moon's view is blocked, causing him to frown. In the last scene, the man fans the woman with his hat because the moon has left the sky and is perched over her shoulder to see everything better."
+      },
+      {
+        "Release Year": 1901,
+        "Title": "The Martyred Presidents",
+        "Origin/Ethnicity": "American",
+        "Director": "Unknown",
+        "Cast": null,
+        "Genre": "unknown",
+        "Wiki Page": "https://en.wikipedia.org/wiki/The_Martyred_Presidents",
+        "Plot": "The film, just over a minute long, is composed of two shots. In the first, a girl sits at the base of an altar or tomb, her face hidden from the camera. At the center of the altar, a viewing portal displays the portraits of three U.S. Presidents—Abraham Lincoln, James A. Garfield, and William McKinley—each victims of assassination.\r\nIn the second shot, which runs just over eight seconds long, an assassin kneels feet of Lady Justice."
+      },
+      {
+        "Release Year": 1901,
+        "Title": "Terrible Teddy, the Grizzly King",
+        "Origin/Ethnicity": "American",
+        "Director": "Unknown",
+        "Cast": null,
+        "Genre": "unknown",
+        "Wiki Page": "https://en.wikipedia.org/wiki/Terrible_Teddy,_the_Grizzly_King",
+        "Plot": "Lasting just 61 seconds and consisting of two shots, the first shot is set in a wood during winter. The actor representing then vice-president Theodore Roosevelt enthusiastically hurries down a hillside towards a tree in the foreground. He falls once, but rights himself and cocks his rifle. Two other men, bearing signs reading \"His Photographer\" and \"His Press Agent\" respectively, follow him into the shot; the photographer sets up his camera. \"Teddy\" aims his rifle upward at the tree and fells what appears to be a common house cat, which he then proceeds to stab. \"Teddy\" holds his prize aloft, and the press agent takes notes. The second shot is taken in a slightly different part of the wood, on a path. \"Teddy\" rides the path on his horse towards the camera and out to the left of the shot, followed closely by the press agent and photographer, still dutifully holding their signs."
+      },
+      {
+        "Release Year": 1902,
+        "Title": "Jack and the Beanstalk",
+        "Origin/Ethnicity": "American",
+        "Director": "George S. Fleming, Edwin S. Porter",
+        "Cast": null,
+        "Genre": "unknown",
+        "Wiki Page": "https://en.wikipedia.org/wiki/Jack_and_the_Beanstalk_(1902_film)",
+        "Plot": "The earliest known adaptation of the classic fairytale, this films shows Jack trading his cow for the beans, his mother forcing him to drop them in the front yard, and beig forced upstairs. As he sleeps, Jack is visited by a fairy who shows him glimpses of what will await him when he ascends the bean stalk. In this version, Jack is the son of a deposed king. When Jack wakes up, he finds the beanstalk has grown and he climbs to the top where he enters the giant's home. The giant finds Jack, who narrowly escapes. The giant chases Jack down the bean stalk, but Jack is able to cut it down before the giant can get to safety. He falls and is killed as Jack celebrates. The fairy then reveals that Jack may return home as a prince."
+      }
+    ]
+  }
+}

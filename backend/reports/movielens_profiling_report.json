@@ -1,0 +1,283 @@
+{
+  "movies.csv": {
+    "component_name": "movielens/movies.csv",
+    "row_count": 87585,
+    "column_count": 3,
+    "schema": {
+      "movieId": "Int64",
+      "title": "String",
+      "genres": "String"
+    },
+    "datatype_summary": {
+      "Int64": 1,
+      "String": 2
+    },
+    "missing_values": {
+      "movieId": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "title": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "genres": {
+        "count": 0,
+        "percentage": 0.0
+      }
+    },
+    "unique_values": {
+      "movieId": 87585,
+      "title": 87382,
+      "genres": 1798
+    },
+    "duplicate_statistics": {
+      "duplicate_count": 0,
+      "duplicate_percentage": 0.0
+    },
+    "estimated_memory_mb": 4.0285,
+    "sample_records": [
+      {
+        "movieId": 1,
+        "title": "Toy Story (1995)",
+        "genres": "Adventure|Animation|Children|Comedy|Fantasy"
+      },
+      {
+        "movieId": 2,
+        "title": "Jumanji (1995)",
+        "genres": "Adventure|Children|Fantasy"
+      },
+      {
+        "movieId": 3,
+        "title": "Grumpier Old Men (1995)",
+        "genres": "Comedy|Romance"
+      },
+      {
+        "movieId": 4,
+        "title": "Waiting to Exhale (1995)",
+        "genres": "Comedy|Drama|Romance"
+      },
+      {
+        "movieId": 5,
+        "title": "Father of the Bride Part II (1995)",
+        "genres": "Comedy"
+      }
+    ]
+  },
+  "ratings.csv": {
+    "component_name": "movielens/ratings.csv",
+    "row_count": 32000204,
+    "column_count": 4,
+    "schema": {
+      "userId": "Int64",
+      "movieId": "Int64",
+      "rating": "Float64",
+      "timestamp": "Int64"
+    },
+    "datatype_summary": {
+      "Int64": 3,
+      "Float64": 1
+    },
+    "missing_values": {
+      "userId": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "movieId": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "rating": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "timestamp": {
+        "count": 0,
+        "percentage": 0.0
+      }
+    },
+    "unique_values": {
+      "userId": 204007,
+      "movieId": 85962,
+      "rating": 10,
+      "timestamp": 26233949
+    },
+    "duplicate_statistics": {
+      "duplicate_count": 0,
+      "duplicate_percentage": 0.0
+    },
+    "estimated_memory_mb": 976.5687,
+    "sample_records": [
+      {
+        "userId": 1,
+        "movieId": 17,
+        "rating": 4.0,
+        "timestamp": 944249077
+      },
+      {
+        "userId": 1,
+        "movieId": 25,
+        "rating": 1.0,
+        "timestamp": 944250228
+      },
+      {
+        "userId": 1,
+        "movieId": 29,
+        "rating": 2.0,
+        "timestamp": 943230976
+      },
+      {
+        "userId": 1,
+        "movieId": 30,
+        "rating": 5.0,
+        "timestamp": 944249077
+      },
+      {
+        "userId": 1,
+        "movieId": 32,
+        "rating": 5.0,
+        "timestamp": 943228858
+      }
+    ]
+  },
+  "tags.csv": {
+    "component_name": "movielens/tags.csv",
+    "row_count": 2000072,
+    "column_count": 4,
+    "schema": {
+      "userId": "Int64",
+      "movieId": "Int64",
+      "tag": "String",
+      "timestamp": "Int64"
+    },
+    "datatype_summary": {
+      "Int64": 3,
+      "String": 1
+    },
+    "missing_values": {
+      "userId": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "movieId": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "tag": {
+        "count": 16,
+        "percentage": 0.0008
+      },
+      "timestamp": {
+        "count": 0,
+        "percentage": 0.0
+      }
+    },
+    "unique_values": {
+      "userId": 15848,
+      "movieId": 51323,
+      "tag": 140981,
+      "timestamp": 1291250
+    },
+    "duplicate_statistics": {
+      "duplicate_count": 0,
+      "duplicate_percentage": 0.0
+    },
+    "estimated_memory_mb": 63.765,
+    "sample_records": [
+      {
+        "userId": 22,
+        "movieId": 26479,
+        "tag": "Kevin Kline",
+        "timestamp": 1583038886
+      },
+      {
+        "userId": 22,
+        "movieId": 79592,
+        "tag": "misogyny",
+        "timestamp": 1581476297
+      },
+      {
+        "userId": 22,
+        "movieId": 247150,
+        "tag": "acrophobia",
+        "timestamp": 1622483469
+      },
+      {
+        "userId": 34,
+        "movieId": 2174,
+        "tag": "music",
+        "timestamp": 1249808064
+      },
+      {
+        "userId": 34,
+        "movieId": 2174,
+        "tag": "weird",
+        "timestamp": 1249808102
+      }
+    ]
+  },
+  "links.csv": {
+    "component_name": "movielens/links.csv",
+    "row_count": 87585,
+    "column_count": 3,
+    "schema": {
+      "movieId": "Int64",
+      "imdbId": "Int64",
+      "tmdbId": "Int64"
+    },
+    "datatype_summary": {
+      "Int64": 3
+    },
+    "missing_values": {
+      "movieId": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "imdbId": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "tmdbId": {
+        "count": 124,
+        "percentage": 0.1416
+      }
+    },
+    "unique_values": {
+      "movieId": 87585,
+      "imdbId": 87585,
+      "tmdbId": 87426
+    },
+    "duplicate_statistics": {
+      "duplicate_count": 0,
+      "duplicate_percentage": 0.0
+    },
+    "estimated_memory_mb": 2.0047,
+    "sample_records": [
+      {
+        "movieId": 1,
+        "imdbId": 114709,
+        "tmdbId": 862
+      },
+      {
+        "movieId": 2,
+        "imdbId": 113497,
+        "tmdbId": 8844
+      },
+      {
+        "movieId": 3,
+        "imdbId": 113228,
+        "tmdbId": 15602
+      },
+      {
+        "movieId": 4,
+        "imdbId": 114885,
+        "tmdbId": 31357
+      },
+      {
+        "movieId": 5,
+        "imdbId": 113041,
+        "tmdbId": 11862
+      }
+    ]
+  }
+}

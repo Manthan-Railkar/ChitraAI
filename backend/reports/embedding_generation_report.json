@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-07-13T18:36:07Z",
+  "model_name": "BAAI/bge-base-en-v1.5",
+  "embedding_dimension": 768,
+  "total_movies_embedded": 100,
+  "device": "cuda",
+  "total_time_seconds": 33.84,
+  "total_time_minutes": 0.56,
+  "output_file": "C:\\Users\\Manthan Railkar\\Desktop\\Git\\ChitraAI\\backend\\app\\embeddings\\movie_embeddings.parquet",
+  "output_size_mb": 0.28
+}

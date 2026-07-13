@@ -1,0 +1,97 @@
+{
+  "imdb": {
+    "dataset": "IMDb",
+    "validation_status": "PASSED",
+    "issues": [
+      {
+        "rule": "Ratings key tconst must exist in basics",
+        "severity": "HIGH",
+        "file": "title.ratings.tsv.gz",
+        "affected_rows": 14
+      },
+      {
+        "rule": "Principals key tconst must exist in basics",
+        "severity": "HIGH",
+        "file": "title.principals.tsv.gz",
+        "affected_rows": 277
+      },
+      {
+        "rule": "Principals key nconst must exist in names",
+        "severity": "HIGH",
+        "file": "title.principals.tsv.gz",
+        "affected_rows": 7212
+      }
+    ],
+    "statistics": {
+      "title_basics_rows": 12639803,
+      "name_basics_rows": 15483410,
+      "broken_ratings_fks": 14,
+      "broken_principals_title_fks": 277,
+      "broken_principals_name_fks": 7212,
+      "broken_crew_fks": 0
+    }
+  },
+  "movielens": {
+    "dataset": "MovieLens",
+    "validation_status": "PASSED",
+    "issues": [],
+    "statistics": {
+      "movies_rows": 87585,
+      "ratings_rows": 32000204
+    }
+  },
+  "tmdb": {
+    "dataset": "TMDb",
+    "validation_status": "PASSED",
+    "issues": [
+      {
+        "rule": "TMDb metadata primary key must be unique",
+        "severity": "HIGH",
+        "file": "movies_metadata.csv",
+        "affected_rows": 30
+      },
+      {
+        "rule": "TMDb release_date format must be YYYY-MM-DD",
+        "severity": "MEDIUM",
+        "file": "movies_metadata.csv",
+        "affected_rows": 3
+      }
+    ],
+    "statistics": {
+      "metadata_rows": 45466,
+      "broken_credits_fks": 0,
+      "broken_keywords_fks": 0
+    }
+  },
+  "wikipedia": {
+    "dataset": "Wikipedia",
+    "validation_status": "PASSED",
+    "issues": [],
+    "statistics": {
+      "wiki_rows": 34886
+    }
+  },
+  "cross_dataset": {
+    "dataset": "Cross-Dataset Links",
+    "validation_status": "PASSED",
+    "issues": [
+      {
+        "rule": "MovieLens links.csv imdbId should reference a valid IMDb tconst",
+        "severity": "MEDIUM",
+        "details": "Broken links: 243 / 87585 (99.72% match)"
+      },
+      {
+        "rule": "MovieLens links.csv tmdbId should reference a valid TMDb id",
+        "severity": "MEDIUM",
+        "details": "Broken links: 44510 / 87585 (49.18% match)"
+      }
+    ],
+    "statistics": {
+      "total_movielens_links": 87585,
+      "broken_imdb_links": 243,
+      "imdb_link_match_percentage": 99.72,
+      "broken_tmdb_links": 44510,
+      "tmdb_link_match_percentage": 49.18
+    }
+  }
+}

@@ -1,2 +1,10 @@
-# ChitraAI-
-The challenge aims to encourage participants to build a practical, intelligent, and user-friendly movie discovery platform while showcasing their frontend development, API integration, and problem-solving skills.
+# ChitraAI
+
+AI-Powered Semantic Movie Recommendation System.
+
+## Project Structure
+
+- `backend/`: FastAPI backend implementation.
+- `frontend/`: Web interface (to be implemented).
+- `docs/`: System documentation and designs.
+- `docker/`: Deployment and orchestration setups.
