@@ -1,0 +1,130 @@
+@keyframes border-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes float-slow-1 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(40px, -50px) scale(1.15);
+  }
+}
+
+@keyframes float-slow-2 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1.1);
+  }
+  50% {
+    transform: translate(-50px, 35px) scale(0.9);
+  }
+}
+
+@keyframes gradient-text {
+  0%,
+  100% {
+    background-size: 200% 200%;
+    background-position: left center;
+  }
+  50% {
+    background-size: 200% 200%;
+    background-position: right center;
+  }
+}
+
+/* ─── Cards ──────────────────────────────────────────────────────── */
+.feature-card-wrapper {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  padding: 1px;
+  background: rgba(255, 255, 255, 0.04);
+  transition:
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(12px);
+}
+
+.feature-card-wrapper:hover {
+  transform: translateY(-8px) scale(1.015);
+  box-shadow:
+    0 24px 50px rgba(0, 0, 0, 0.6),
+    0 0 30px rgba(99, 102, 241, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.feature-card-glow {
+  position: absolute;
+  width: 250%;
+  height: 250%;
+  top: -75%;
+  left: -75%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 15%,
+    rgba(59, 130, 246, 0.65) 35%,
+    rgba(139, 92, 246, 0.65) 55%,
+    transparent 75%
+  );
+  animation: border-spin 8s linear infinite;
+  pointer-events: none;
+  opacity: 0.3;
+  transition: opacity 0.3s ease;
+}
+
+.feature-card-wrapper:hover .feature-card-glow {
+  opacity: 1;
+  animation-duration: 4s;
+}
+
+.feature-card-inner {
+  position: relative;
+  background: rgb(8, 8, 10);
+  border-radius: 19px;
+  padding: 36px 30px;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.feature-card-inner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.04), transparent 70%);
+  pointer-events: none;
+}
+
+/* ─── Animations & Floating BG ───────────────────────────────────── */
+.animate-gradient-text {
+  animation: gradient-text 5s ease infinite;
+}
+
+.floating-glow-1 {
+  animation: float-slow-1 25s ease-in-out infinite;
+}
+
+.floating-glow-2 {
+  animation: float-slow-2 30s ease-in-out infinite;
+}
+
+.icon-container {
+  transition:
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.3s ease;
+}
+
+.feature-card-wrapper:hover .icon-container {
+  transform: scale(1.1) rotate(6deg);
+}
