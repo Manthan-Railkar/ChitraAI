@@ -117,6 +117,8 @@ class RecommendationService:
         """
         Dynamically expands abstract query concepts into TMDb genres and keywords.
         """
+        # Ensure initial genres are normalized
+        intent.genres = RecommendationIntent._normalize_genre_list(intent.genres)
         intent.explicit_genres = list(intent.genres)
         query_lower = query.lower()
         
@@ -148,8 +150,9 @@ class RecommendationService:
                 is_matched = True
 
             if is_matched:
-                # Add expanded genres
-                for g in mapping["genres"]:
+                # Add expanded genres (normalized)
+                normalized_expanded_genres = RecommendationIntent._normalize_genre_list(mapping["genres"])
+                for g in normalized_expanded_genres:
                     if g not in intent.genres:
                         intent.genres.append(g)
                 # Add expanded keywords
@@ -169,6 +172,31 @@ class RecommendationService:
         # 1. Extract structured intent using OpenAI
         intent = await self.intent_extractor.extract_intent(query)
         self.expand_abstract_themes(intent, query)
+
+        # Validate person entities before routing (BUG #2, BUG #3, BUG #6)
+        if getattr(intent, "strict_person_filter", False) and (intent.preferred_directors or intent.preferred_actors):
+            target_directors = [d for d in intent.preferred_directors if d]
+            target_actors = [a for a in intent.preferred_actors if a]
+            
+            dir_tasks = [self.tmdb_service.resolve_person_id(d) for d in target_directors]
+            act_tasks = [self.tmdb_service.resolve_person_id(a) for a in target_actors]
+            
+            resolved_dirs = await asyncio.gather(*dir_tasks) if dir_tasks else []
+            resolved_acts = await asyncio.gather(*act_tasks) if act_tasks else []
+            
+            valid_directors = [d for d, pid in zip(target_directors, resolved_dirs) if pid]
+            valid_actors = [a for a, pid in zip(target_actors, resolved_acts) if pid]
+            
+            if not valid_directors and not valid_actors:
+                logger.info(f"[Audit Log] No valid person entities found on TMDb. Disabling strict person filter. (Original: directors={target_directors}, actors={target_actors})")
+                intent.strict_person_filter = False
+                intent.preferred_directors = []
+                intent.preferred_actors = []
+            else:
+                intent.preferred_directors = valid_directors
+                intent.preferred_actors = valid_actors
+                logger.info(f"[Audit Log] Validated strict person entities. Keep directors={valid_directors}, actors={valid_actors}")
+        
         
         # 1b. Check if the intent is movie_lookup
         if getattr(intent, "intent", "recommendation") == "movie_lookup":
@@ -316,8 +344,9 @@ class RecommendationService:
                     for lbl, resp in zip(sim_fetch_labels, sim_responses):
                         if "details_of_" in lbl and resp:
                             ref_genres = [g.get("name") for g in resp.get("genres", []) if g.get("name")]
+                            ref_genres_norm = RecommendationIntent._normalize_genre_list(ref_genres)
                             ref_kws = [k.get("name") for k in resp.get("keywords", {}).get("keywords", []) if k.get("name")]
-                            for g in ref_genres:
+                            for g in ref_genres_norm:
                                 if g not in intent.genres:
                                     intent.genres.append(g)
                             for k in ref_kws[:10]:
@@ -423,11 +452,12 @@ class RecommendationService:
                                 ref_details = await self.tmdb_service.fetch_movie_details(ref_id)
                                 if ref_details:
                                     ref_genres = [g.get("name") for g in ref_details.get("genres", []) if g.get("name")]
+                                    ref_genres_norm = RecommendationIntent._normalize_genre_list(ref_genres)
                                     ref_kws = [k.get("name") for k in ref_details.get("keywords", {}).get("keywords", []) if k.get("name")]
                                     ref_directors = [c.get("name") for c in ref_details.get("credits", {}).get("crew", []) if c.get("job") == "Director" and c.get("name")]
                                     ref_collection_name = ref_details.get("belongs_to_collection", {}).get("name") if ref_details.get("belongs_to_collection") else None
 
-                                    for g in ref_genres:
+                                    for g in ref_genres_norm:
                                         if g not in intent.genres:
                                             intent.genres.append(g)
                                     for k in ref_kws[:10]:

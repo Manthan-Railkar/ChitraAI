@@ -50,18 +50,61 @@ class RankingService:
                 return "tv movie"
             return g_low
 
+        title = movie.get("title") or movie.get("original_title") or "Unknown"
+
+        # --- BUG #7: Candidate Quality Validation ---
+        # 1. Status Check
+        status = movie.get("status")
+        if isinstance(status, str):
+            if status.lower() in ("planned", "rumored", "post production", "in production", "cancelled"):
+                logger.debug(f"[Audit Log] Rejected candidate '{title}' - unreleased or planned status: '{status}'")
+                return False
+                
+        # 2. Release Date Check
+        release_date = movie.get("release_date")
+        release_year = movie.get("release_year")
+        if not release_date and not release_year:
+            logger.debug(f"[Audit Log] Rejected candidate '{title}' - missing release date and year.")
+            return False
+            
+        # 3. Overview Check
+        overview = movie.get("overview")
+        if not overview or not isinstance(overview, str) or len(overview.strip()) < 10:
+            logger.debug(f"[Audit Log] Rejected candidate '{title}' - missing or extremely short overview.")
+            return False
+            
+        # 4. Empty Genres Check
+        genres = movie.get("genres")
+        if not genres:
+            logger.debug(f"[Audit Log] Rejected candidate '{title}' - empty genres.")
+            return False
+            
+        # 5. Vote Count Check
+        vote_count = movie.get("vote_count")
+        if vote_count is not None:
+            try:
+                if float(vote_count) < 5:
+                    logger.debug(f"[Audit Log] Rejected candidate '{title}' - vote count ({vote_count}) below threshold.")
+                    return False
+            except (ValueError, TypeError):
+                logger.debug(f"[Audit Log] Rejected candidate '{title}' - invalid vote count ({vote_count}).")
+                return False
+
+        # --- Standard Constraints (with audit logging) ---
         # 1. Excluded Genres Check
         movie_genres = [g.lower() for g in (movie.get("genres") or [])]
         movie_genres_norm = {normalize_genre(g) for g in movie_genres}
         avoid_genres = {normalize_genre(g) for g in intent.avoid_genres}
         if avoid_genres and (avoid_genres & movie_genres_norm):
+            logger.debug(f"[Audit Log] Rejected candidate '{title}' - contains avoided genres: {avoid_genres & movie_genres_norm}")
             return False
 
         # 2. Excluded Movies Check
-        title = (movie.get("title") or movie.get("original_title") or "").lower()
+        title_lower = title.lower()
         if intent.avoid_movies:
             avoid_titles = {t.lower() for t in intent.avoid_movies if t}
-            if any(at in title for at in avoid_titles):
+            if any(at in title_lower for at in avoid_titles):
+                logger.debug(f"[Audit Log] Rejected candidate '{title}' - matches avoid list movie title.")
                 return False
 
         # 3. Explicit Genre Constraint
@@ -71,6 +114,7 @@ class RankingService:
         pref_genres = {normalize_genre(g) for g in explicit_genres}
         if pref_genres and movie_genres_norm:
             if not (pref_genres & movie_genres_norm):
+                logger.debug(f"[Audit Log] Rejected candidate '{title}' - does not match explicit genre constraint. Pref: {pref_genres}, Movie: {movie_genres_norm}")
                 return False
 
         # 4. Language Constraint
@@ -88,7 +132,6 @@ class RankingService:
                 target_code = lang_lower
                 
             if target_code:
-                # TMDb movies original_language is string. Local db languages is list of strings.
                 movie_langs = movie.get("languages") or []
                 if not isinstance(movie_langs, list):
                     movie_langs = [movie_langs]
@@ -99,21 +142,22 @@ class RankingService:
                     movie_langs.append(orig_lang.lower())
                     
                 if movie_langs and target_code not in movie_langs:
+                    logger.debug(f"[Audit Log] Rejected candidate '{title}' - language mismatch. Target: {target_code}, Movie: {movie_langs}")
                     return False
-
 
         # 5. Release Era Constraint
-        release_year = movie.get("release_year")
+        # Check release_year
         if release_year:
-            # Check year range
             if intent.year_range:
                 if intent.year_range.start and release_year < intent.year_range.start:
+                    logger.debug(f"[Audit Log] Rejected candidate '{title}' - release year {release_year} < start {intent.year_range.start}")
                     return False
                 if intent.year_range.end and release_year > intent.year_range.end:
+                    logger.debug(f"[Audit Log] Rejected candidate '{title}' - release year {release_year} > end {intent.year_range.end}")
                     return False
-            # Check exact/target year (tolerance ±3 years)
             if intent.release_year:
                 if abs(release_year - intent.release_year) > 3:
+                    logger.debug(f"[Audit Log] Rejected candidate '{title}' - release year {release_year} outside ±3 tolerance of target {intent.release_year}")
                     return False
 
         # 6. Explicit Director Constraint
@@ -121,6 +165,7 @@ class RankingService:
             movie_dirs = [d.lower() for d in (movie.get("directors") or [])]
             pref_dirs = {d.lower() for d in intent.preferred_directors}
             if movie_dirs and not (pref_dirs & set(movie_dirs)):
+                logger.debug(f"[Audit Log] Rejected candidate '{title}' - director mismatch. Pref: {pref_dirs}, Movie: {movie_dirs}")
                 return False
 
         # 7. Explicit Actor Constraint
@@ -128,43 +173,51 @@ class RankingService:
             movie_cast = [a.lower() for a in (movie.get("cast") or [])]
             pref_actors = {a.lower() for a in intent.preferred_actors}
             if movie_cast and not (pref_actors & set(movie_cast)):
+                logger.debug(f"[Audit Log] Rejected candidate '{title}' - actor mismatch. Pref: {pref_actors}, Movie: {movie_cast}")
                 return False
 
         # 8. Country Constraint
         if intent.country:
             movie_countries = [c.lower() for c in (movie.get("production_countries") or [])]
             if movie_countries and not any(intent.country.lower() in mc for mc in movie_countries):
+                logger.debug(f"[Audit Log] Rejected candidate '{title}' - country mismatch. Target: {intent.country}, Movie: {movie_countries}")
                 return False
 
         # 9. Runtime Constraint
         if intent.runtime and movie.get("runtime_minutes"):
-            # Maximum allowed is requested runtime + 10 minutes buffer
             if movie["runtime_minutes"] > (intent.runtime + 10):
+                logger.debug(f"[Audit Log] Rejected candidate '{title}' - runtime {movie['runtime_minutes']} exceeds maximum limit {intent.runtime + 10}")
                 return False
 
         # 10. Family Safety Constraint
         if intent.family_safety == "family_safe":
             if any(g in ["Horror", "Thriller", "Crime"] for g in movie.get("genres", [])):
                 if "Horror" in movie.get("genres", []):
+                    logger.debug(f"[Audit Log] Rejected candidate '{title}' - family safe check: genre is Horror.")
                     return False
             if movie.get("adult"):
+                logger.debug(f"[Audit Log] Rejected candidate '{title}' - family safe check: adult movie.")
                 return False
             movie_kws = {k.lower() for k in (movie.get("keywords") or [])}
             mature_indicators = {"r-rated", "nudity", "gore", "slasher", "mature", "nsfw", "erotic"}
             if mature_indicators & movie_kws:
+                logger.debug(f"[Audit Log] Rejected candidate '{title}' - family safe check: contains mature keywords: {mature_indicators & movie_kws}")
                 return False
 
         # 11. TV Series / Special Exclusions
         exclude_patterns = ["tv series", "tv show", "box set", "complete series", "season ", "episode "]
-        if any(pat in title for pat in exclude_patterns):
+        if any(pat in title_lower for pat in exclude_patterns):
+            logger.debug(f"[Audit Log] Rejected candidate '{title}' - TV series exclusion pattern matched.")
             return False
 
         # 12. Documentary Exclusions (unless requested)
         has_doc_request = any("documentary" in g.lower() for g in intent.genres)
         if not has_doc_request and "Documentary" in movie.get("genres", []):
+            logger.debug(f"[Audit Log] Rejected candidate '{title}' - Documentary exclusion.")
             return False
 
         return True
+
 
     @staticmethod
     def calculate_match_percentage(
@@ -250,8 +303,38 @@ class RankingService:
         """
         Applies profile weights, quality scores, penalties, and boosting to rank candidates.
         """
+        # --- BUG #9: Input Validation & Graceful Recovery ---
         if not candidates:
+            logger.warning("[Ranking Input Validation] Candidate movies list is empty. Returning empty list.")
             return []
+
+        try:
+            # Normalize genres if they are not canonical
+            intent.genres = RecommendationIntent._normalize_genre_list(intent.genres or [])
+            intent.avoid_genres = RecommendationIntent._normalize_genre_list(intent.avoid_genres or [])
+            
+            if not isinstance(intent.preferred_actors, list):
+                intent.preferred_actors = [intent.preferred_actors] if intent.preferred_actors else []
+            if not isinstance(intent.preferred_directors, list):
+                intent.preferred_directors = [intent.preferred_directors] if intent.preferred_directors else []
+            if not isinstance(intent.similar_movies, list):
+                intent.similar_movies = [intent.similar_movies] if intent.similar_movies else []
+            if not isinstance(intent.keywords, list):
+                intent.keywords = [intent.keywords] if intent.keywords else []
+            if not isinstance(intent.themes, list):
+                intent.themes = [intent.themes] if intent.themes else []
+            if not isinstance(intent.moods, list):
+                intent.moods = [intent.moods] if intent.moods else []
+        except Exception as e:
+            logger.error(f"[Ranking Input Validation] Error recovering input metadata: {e}. Attempting fallback schema recovery...")
+            intent.genres = intent.genres or []
+            intent.avoid_genres = intent.avoid_genres or []
+            intent.preferred_actors = intent.preferred_actors or []
+            intent.preferred_directors = intent.preferred_directors or []
+            intent.similar_movies = intent.similar_movies or []
+            intent.keywords = intent.keywords or []
+            intent.themes = intent.themes or []
+            intent.moods = intent.moods or []
 
         pref_genres = {g.lower() for g in intent.genres}
         pref_keywords = {k.lower() for k in (intent.keywords + intent.themes + intent.moods)}
@@ -259,8 +342,6 @@ class RankingService:
         pref_directors = {d.lower() for d in intent.preferred_directors}
         
         ranking_mode = getattr(intent, "ranking_mode", "default").strip().lower()
-
-        # Resolve similar movie reference names for matching
         similar_ref_titles = [t.lower() for t in intent.similar_movies]
 
         # --- DYNAMIC RETRIEVAL & WEIGHT GENERATION ---
@@ -628,6 +709,15 @@ class RankingService:
                 "recommendation_reason": item["explanation"]
             }
             ranked_list.append(movie_scored)
+
+        if ranked_list:
+            top_cand = ranked_list[0]
+            logger.info(
+                f"[Audit Log] Ranking Completed. Top candidate: '{top_cand['title']}' "
+                f"(confidence: {top_cand['confidence_score']:.4f}, "
+                f"reranked score: {top_cand['reranked_score']:.4f}, "
+                f"reason: {top_cand['recommendation_reason']})"
+            )
 
         return ranked_list
 

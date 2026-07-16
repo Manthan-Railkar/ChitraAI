@@ -346,3 +346,124 @@ class TestPipelineUpgrade(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(len(results), 0)
         report = self.local_engine.last_debug_report
         self.assertEqual(report["pipeline_pathway"], "similarity")
+
+    async def test_pipeline_hardening_regression(self):
+        """Regression tests for intent routing, person detection, validation, and quality checks."""
+        from app.services.intent_extractor import IntentExtractor
+
+        # 1. Initialize real IntentExtractor
+        extractor = IntentExtractor()
+        extractor.movie_titles = ["Inception", "Batman Begins", "The Batman", "Batman"]
+        extractor.extract_llm = AsyncMock()
+
+        async def mock_extract_llm(system_prompt, user_prompt):
+            user_lower = user_prompt.lower()
+            if "recommend a mind-bending sci-fi movie" in user_lower:
+                return '{"intent": "recommendation", "genres": ["Science Fiction"], "themes": ["mind-bending"]}'
+            elif "tell me about inception" in user_lower:
+                return '{"intent": "movie_lookup", "similar_movies": ["Inception"]}'
+            elif "movies like interstellar" in user_lower:
+                return '{"intent": "recommendation", "ranking_mode": "similar_movie", "similar_movies": ["Interstellar"]}'
+            return '{}'
+        extractor.extract_llm.side_effect = mock_extract_llm
+
+        # Case A: "Recommend a mind-bending sci-fi movie"
+        intent_a = await extractor.extract_intent("Recommend a mind-bending sci-fi movie")
+        self.assertFalse(intent_a.strict_person_filter)
+        self.assertEqual(intent_a.genres, ["Science Fiction"])
+        self.assertEqual(intent_a.themes, ["mind-bending"])
+        self.assertEqual(intent_a.preferred_actors, [])
+        self.assertEqual(intent_a.preferred_directors, [])
+
+        # Case B: "Tom Cruise movies"
+        intent_b = await extractor.extract_intent("Tom Cruise movies")
+        self.assertTrue(intent_b.strict_person_filter)
+        self.assertEqual(intent_b.preferred_actors, ["Tom Cruise"])
+        self.assertEqual(intent_b.preferred_directors, [])
+
+        # Case C: "Christopher Nolan films"
+        intent_c = await extractor.extract_intent("Christopher Nolan films")
+        self.assertTrue(intent_c.strict_person_filter)
+        self.assertEqual(intent_c.preferred_directors, ["Christopher Nolan"])
+        self.assertEqual(intent_c.preferred_actors, [])
+
+        # Case D: "Tell me about Inception"
+        intent_d = await extractor.extract_intent("Tell me about Inception")
+        self.assertEqual(intent_d.intent, "movie_lookup")
+
+        # Case E: "Movies like Interstellar"
+        intent_e = await extractor.extract_intent("Movies like Interstellar")
+        self.assertEqual(intent_e.ranking_mode, "similar")
+
+        # 2. Test TMDb validation in RecommendationService
+        self.recommend_service.intent_extractor = extractor
+
+        async def mock_resolve(person_name):
+            if person_name == "Tom Cruise":
+                return 500
+            return None
+        self.mock_tmdb_service.resolve_person_id.side_effect = mock_resolve
+
+        discover_data = {
+            "results": [
+                {"id": 101, "title": "Inception", "popularity": 150.0, "vote_average": 8.8, "vote_count": 20000, "overview": "A dream thief...", "genres": ["Action"]}
+            ]
+        }
+        self.mock_tmdb_service.discover_movies.return_value = discover_data
+
+        async def fetch_details_mock(tmdb_id):
+            return {
+                "id": tmdb_id,
+                "title": "Inception",
+                "original_title": "Inception",
+                "overview": "A dream thief...",
+                "genres": [{"id": 1, "name": "Action"}],
+                "release_date": "2010-01-01",
+                "vote_average": 8.8,
+                "vote_count": 20000,
+                "popularity": 150.0,
+                "poster_path": None,
+                "backdrop_path": None,
+                "tagline": None,
+                "belongs_to_collection": None,
+                "keywords": {"keywords": []},
+                "credits": {"cast": [], "crew": []},
+                "production_companies": [],
+                "production_countries": []
+            }
+        self.mock_tmdb_service.fetch_movie_details.side_effect = fetch_details_mock
+
+        # Case F: Query with nonexistent actor
+        ret_intent, results = await self.recommend_service.recommend_movies_from_query(
+            "Nonexistent Actor movies", limit=10
+        )
+        self.assertFalse(ret_intent.strict_person_filter)
+        self.assertEqual(ret_intent.preferred_actors, [])
+
+        # Case G: Candidate Quality Validation check in passes_hard_constraints
+        from app.services.ranking_service import RankingService
+        valid_movie = {
+            "title": "Good Movie",
+            "release_date": "2020-01-01",
+            "overview": "This is a great movie to watch.",
+            "genres": ["Science Fiction"],
+            "vote_count": 100
+        }
+        self.assertTrue(RankingService.passes_hard_constraints(valid_movie, intent_a))
+
+        # Invalid: unreleased status
+        unreleased_movie = dict(valid_movie, status="Planned")
+        self.assertFalse(RankingService.passes_hard_constraints(unreleased_movie, intent_a))
+
+        # Invalid: missing release date/year
+        no_date_movie = dict(valid_movie, release_date=None, release_year=None)
+        self.assertFalse(RankingService.passes_hard_constraints(no_date_movie, intent_a))
+
+        # Invalid: empty genres
+        no_genres_movie = dict(valid_movie, genres=[])
+        self.assertFalse(RankingService.passes_hard_constraints(no_genres_movie, intent_a))
+
+        # Invalid: low vote count
+        low_votes_movie = dict(valid_movie, vote_count=2)
+        self.assertFalse(RankingService.passes_hard_constraints(low_votes_movie, intent_a))
+

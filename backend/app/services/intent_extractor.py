@@ -6,10 +6,25 @@ import difflib
 from pathlib import Path
 from typing import List, Optional, Any, Dict
 from collections import OrderedDict
-from pydantic import BaseModel, Field, AliasChoices
+from pydantic import BaseModel, Field, AliasChoices, model_validator
 from loguru import logger
 from app.core.config import settings
 from app.core.model_manager import ModelManager
+
+
+NON_PERSON_TERMS = {
+    "recommend", "sci-fi", "science fiction", "horror", "drama", "comedy", 
+    "thriller", "action", "romance", "romantic", "mystery", "documentary", 
+    "family", "fantasy", "history", "music", "war", "western", "adventure",
+    "mind-bending", "heist", "time travel", "space", "dystopian", "cyberpunk", 
+    "magic", "emotional", "sad", "happy", "funny", "scary", "intense", 
+    "thrilling", "spooky", "creepy", "hilarious", "heartwarming", "suspenseful",
+    "best", "top", "good", "great", "nice", "excellent", "award", "oscar", 
+    "make me cry", "detective", "psychological", "exploration", "classic", 
+    "recent", "underrated", "movies", "films", "movie", "film", "suggest",
+    "recommendation", "recommendations", "show", "shows", "about", "like",
+    "similar", "tell", "me"
+}
 
 
 class YearRange(BaseModel):
@@ -50,6 +65,61 @@ class RecommendationIntent(BaseModel):
     violence_level: Optional[str] = Field(None, description="Violence level: 'low', 'high', 'neutral'")
     strict_person_filter: bool = Field(False, description="When True, treat preferred_directors/preferred_actors as hard filters (only return movies featuring that person)")
     explicit_genres: Optional[List[str]] = Field(default=None, description="Explicit user requested genres before theme expansion")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_intent_genres(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "genres" in data and isinstance(data["genres"], list):
+                data["genres"] = cls._normalize_genre_list(data["genres"])
+            if "avoid_genres" in data and isinstance(data["avoid_genres"], list):
+                data["avoid_genres"] = cls._normalize_genre_list(data["avoid_genres"])
+            if "explicit_genres" in data and isinstance(data["explicit_genres"], list):
+                data["explicit_genres"] = cls._normalize_genre_list(data["explicit_genres"])
+        return data
+
+    @classmethod
+    def _normalize_genre_list(cls, genres: List[str]) -> List[str]:
+        canonical_map = {
+            "action": "Action",
+            "adventure": "Adventure",
+            "animation": "Animation",
+            "comedy": "Comedy",
+            "crime": "Crime",
+            "documentary": "Documentary",
+            "drama": "Drama",
+            "family": "Family",
+            "fantasy": "Fantasy",
+            "history": "History",
+            "horror": "Horror",
+            "music": "Music",
+            "mystery": "Mystery",
+            "romance": "Romance",
+            "science fiction": "Science Fiction",
+            "sci-fi": "Science Fiction",
+            "scifi": "Science Fiction",
+            "thriller": "Thriller",
+            "war": "War",
+            "western": "Western",
+            "tv movie": "TV Movie"
+        }
+        normalized = []
+        for g in genres:
+            if not isinstance(g, str):
+                continue
+            g_low = g.lower().strip()
+            if g_low in canonical_map:
+                normalized.append(canonical_map[g_low])
+            else:
+                normalized.append(g.title().strip())
+        seen = set()
+        deduped = []
+        for g in normalized:
+            if g not in seen:
+                seen.add(g)
+                deduped.append(g)
+        return deduped
+
 
 
 class IntentCache:
@@ -162,8 +232,7 @@ class IntentExtractor(LLMIntentExtractor):
                 ranking_mode="default",
                 similar_movies=[matched_title]
             )
-            self._cache.set(cleaned_query, local_intent)
-            return local_intent
+            return self._postprocess_intent(cleaned_query, local_intent)
 
         # 3b. Local heuristic for person-specific queries (e.g. "movies by Christopher Nolan", "Nolan films")
         person_patterns = [
@@ -172,24 +241,70 @@ class IntentExtractor(LLMIntentExtractor):
             r'^(.+?)\s+(?:movies?|films?|filmography|directed)$',
             r'^(?:directed by|films? by)\s+(.+)$',
         ]
-        for pattern in person_patterns:
-            match = re.match(pattern, query_cleaned)
-            if match:
-                person_name = match.group(1).strip()
-                # Capitalize each word for proper name formatting
-                person_name_formatted = " ".join(w.capitalize() for w in person_name.split())
-                # Determine if director or actor based on query phrasing
-                is_director = any(kw in query_cleaned for kw in ["directed by", "directed", "by"])
-                logger.info(f"[Local Intent Router] Person-specific query detected: '{cleaned_query}' -> person='{person_name_formatted}', is_director={is_director}")
-                person_intent = RecommendationIntent(
-                    intent="recommendation",
-                    ranking_mode="default",
-                    preferred_directors=[person_name_formatted] if is_director else [],
-                    preferred_actors=[person_name_formatted] if not is_director else [],
-                    strict_person_filter=True
-                )
-                self._cache.set(cleaned_query, person_intent)
-                return person_intent
+        
+        person_name = None
+        is_director = False
+        confidence = 0.0
+        detection_reason = ""
+
+        indicators = ["starring", "actor", "actress", "cast", "with", "featuring", 
+                      "movies by", "films by", "directed by", "director", "filmography", "directed"]
+        has_strong_indicator = any(ind in query_cleaned for ind in indicators)
+        has_movie_film = any(w in query_cleaned for w in ["movies", "films", "movie", "film"])
+
+        if has_strong_indicator or has_movie_film:
+            for pattern in person_patterns:
+                match = re.match(pattern, query_cleaned)
+                if match:
+                    extracted = match.group(1).strip()
+                    # Check against non-person terms
+                    extracted_words = [w.strip() for w in re.split(r'\s+|-', extracted) if w.strip()]
+                    if extracted_words and not any(w in NON_PERSON_TERMS for w in extracted_words):
+                        person_name = " ".join(w.capitalize() for w in extracted.split())
+                        is_director = any(kw in query_cleaned for kw in ["directed by", "director", "directed", "by", "filmography"])
+                        if "films" in query_cleaned and not any(kw in query_cleaned for kw in ["with", "starring", "featuring", "actor", "actress"]):
+                            is_director = True
+                        
+                        if "starring" in query_cleaned:
+                            confidence = 0.98
+                            detection_reason = "query contains 'starring'"
+                        elif "directed by" in query_cleaned:
+                            confidence = 0.99
+                            detection_reason = "query contains 'directed by'"
+                        elif "director" in query_cleaned or "directed" in query_cleaned:
+                            confidence = 0.95
+                            detection_reason = "query contains 'director' or 'directed'"
+                        elif "actor" in query_cleaned or "actress" in query_cleaned:
+                            confidence = 0.95
+                            detection_reason = "query contains 'actor' or 'actress'"
+                        elif "with" in query_cleaned:
+                            confidence = 0.90
+                            detection_reason = "query contains 'with'"
+                        elif "featuring" in query_cleaned:
+                            confidence = 0.92
+                            detection_reason = "query contains 'featuring'"
+                        elif "movies by" in query_cleaned or "films by" in query_cleaned:
+                            confidence = 0.98
+                            detection_reason = "query contains 'movies by' or 'films by'"
+                        elif "filmography" in query_cleaned:
+                            confidence = 0.99
+                            detection_reason = "query contains 'filmography'"
+                        else:
+                            confidence = 0.88
+                            detection_reason = "query contains 'movies'/'films' and a clean name prefix"
+                        break
+
+        if person_name:
+            person_intent = RecommendationIntent(
+                intent="recommendation",
+                ranking_mode="default",
+                preferred_directors=[person_name] if is_director else [],
+                preferred_actors=[person_name] if not is_director else [],
+                strict_person_filter=True
+            )
+            return self._postprocess_intent(cleaned_query, person_intent)
+        else:
+            logger.info(f"[Local Intent Router] No valid person indicators or names found. Skipping strict person routing.")
 
         # 4. Check if query is extremely simple (no LLM call required)
         words = re.findall(r'[a-zA-Z0-9\-]+', query_cleaned)
@@ -202,8 +317,7 @@ class IntentExtractor(LLMIntentExtractor):
             if all(w in genre_words or w in allowed_fillers for w in words):
                 logger.info(f"[Local Intent Router] Simple query detected: '{cleaned_query}'. Using local heuristic parser.")
                 simple_intent = self._extract_intent_heuristically(cleaned_query)
-                self._cache.set(cleaned_query, simple_intent)
-                return simple_intent
+                return self._postprocess_intent(cleaned_query, simple_intent)
 
         # 5. Call LLM for extraction
         logger.info(f"[Intent Cache] MISS for query: '{cleaned_query}'. Calling {self.provider} API...")
@@ -265,29 +379,25 @@ class IntentExtractor(LLMIntentExtractor):
             # 6. Parse and validate JSON
             intent = self._parse_and_validate_json(content)
             if intent:
-                self._cache.set(cleaned_query, intent)
-                return intent
+                return self._postprocess_intent(cleaned_query, intent)
             else:
                 logger.warning("[LLM Intent] JSON validation failed. Attempting one lightweight repair...")
                 repaired_content = self._attempt_json_repair(content)
                 intent = self._parse_and_validate_json(repaired_content)
                 if intent:
                     logger.info("[LLM Intent] JSON repair succeeded.")
-                    self._cache.set(cleaned_query, intent)
-                    return intent
+                    return self._postprocess_intent(cleaned_query, intent)
                 else:
                     logger.error("[LLM Intent] JSON repair failed. Falling back to local heuristic parser.")
                     heuristic_intent = self._extract_intent_heuristically(cleaned_query)
-                    self._cache.set(cleaned_query, heuristic_intent)
-                    return heuristic_intent
+                    return self._postprocess_intent(cleaned_query, heuristic_intent)
                     
         except Exception as e:
             # Handle error logging: Timeout, Network, 429, 500, json_validate_failed, max tokens, etc.
             err_type = type(e).__name__
             logger.error(f"[LLM Intent] API error: {err_type} - {e}. Falling back to local heuristic parser.")
             heuristic_intent = self._extract_intent_heuristically(cleaned_query)
-            self._cache.set(cleaned_query, heuristic_intent)
-            return heuristic_intent
+            return self._postprocess_intent(cleaned_query, heuristic_intent)
 
     def _parse_and_validate_json(self, content: str) -> Optional[RecommendationIntent]:
         """Parses and validates LLM completion JSON content against the schema."""
@@ -418,8 +528,8 @@ class IntentExtractor(LLMIntentExtractor):
             "comedy": "Comedy", "crime": "Crime", "documentary": "Documentary",
             "drama": "Drama", "family": "Family", "fantasy": "Fantasy",
             "history": "History", "horror": "Horror", "music": "Music",
-            "mystery": "Mystery", "romance": "Romance", "science fiction": "Sci-Fi",
-            "sci-fi": "Sci-Fi", "tv movie": "TV Movie", "thriller": "Thriller",
+            "mystery": "Mystery", "romance": "Romance", "science fiction": "Science Fiction",
+            "sci-fi": "Science Fiction", "tv movie": "TV Movie", "thriller": "Thriller",
             "war": "War", "western": "Western"
         }
         genres = []
@@ -618,3 +728,60 @@ class IntentExtractor(LLMIntentExtractor):
             country=country,
             studio=studio
         )
+
+    @staticmethod
+    def classify_intent(intent: RecommendationIntent, query: str) -> str:
+        q = query.lower()
+        
+        # 1. Movie Lookup
+        if intent.intent == "movie_lookup" or (intent.similar_movies and intent.ranking_mode == "default" and not intent.genres and not intent.preferred_actors and not intent.preferred_directors):
+            return "Movie Lookup"
+            
+        # 2. Actor Lookup / Director Lookup (Strict Person Filter)
+        if intent.strict_person_filter:
+            if intent.preferred_directors:
+                return "Director Lookup"
+            if intent.preferred_actors:
+                return "Actor Lookup"
+                
+        # 3. Similar Movie Recommendation
+        if intent.similar_movies and intent.ranking_mode in ("similar", "similar_movie"):
+            return "Similar Movie Recommendation"
+            
+        # 4. Mood Recommendation
+        if intent.moods or intent.themes:
+            return "Mood Recommendation"
+            
+        # 5. Genre Recommendation
+        if intent.genres and not intent.moods and not intent.themes and not intent.similar_movies:
+            return "Genre Recommendation"
+            
+        # 6. General Search
+        if intent.intent == "general_search":
+            return "General Search"
+            
+        # Default: Recommendation
+        return "Recommendation"
+
+    def _postprocess_intent(self, query: str, intent: RecommendationIntent) -> RecommendationIntent:
+        # Classify the intent
+        classification = self.classify_intent(intent, query)
+        logger.info(f"[Intent Router] Query: '{query}' -> Classified as: '{classification}'")
+        
+        # Ensure genres are normalized
+        intent.genres = RecommendationIntent._normalize_genre_list(intent.genres)
+        intent.avoid_genres = RecommendationIntent._normalize_genre_list(intent.avoid_genres)
+        if intent.explicit_genres is not None:
+            intent.explicit_genres = RecommendationIntent._normalize_genre_list(intent.explicit_genres)
+            
+        # Audit logging (BUG #8)
+        if intent.strict_person_filter:
+            person_names = intent.preferred_directors + intent.preferred_actors
+            logger.info(f"[Audit Log] Strict person routing enabled. Target(s): {person_names}. Classification: {classification}.")
+        else:
+            logger.info(f"[Audit Log] Normal routing enabled. Classification: {classification}.")
+            
+        # Cache the result
+        self._cache.set(query, intent)
+        return intent
+
