@@ -167,10 +167,10 @@ class RecommendationService:
                     import numpy as np
                     semantic_scores = np.dot(candidate_embs, query_vector)
                     
-                    from app.services.local_retrieval import WeightedScorer, apply_diversity
-                    scored_candidates = WeightedScorer.score_candidates(candidates, intent, semantic_scores)
+                    from app.services.ranking_service import RankingService
+                    scored_candidates = RankingService.rank_candidates(candidates, intent, semantic_scores)
                     
-                    diversified_candidates = apply_diversity(scored_candidates)
+                    diversified_candidates = RankingService.apply_diversity(scored_candidates)
                     top_candidates = diversified_candidates[:limit]
                     
                     def format_debug_candidate(movie: dict, final_score: float = 0.0) -> dict:

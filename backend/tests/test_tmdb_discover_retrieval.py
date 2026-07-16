@@ -27,7 +27,7 @@ async def test_tmdb_query_builder_genre_and_language():
     
     params = await TMDbQueryBuilder.build_query(intent, dummy_service)
     
-    assert params["with_genres"] == "28,878"
+    assert params["with_genres"] == "28|878"
     assert params["with_original_language"] == "ko"
     assert params["primary_release_year"] == 2021
     assert params["with_runtime.lte"] == 120

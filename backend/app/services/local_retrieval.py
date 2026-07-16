@@ -959,10 +959,11 @@ class LocalRetrievalEngine:
         semantic_scores_subset = top_fused_df.select("semantic_score").to_series().to_numpy().astype(np.float32)
 
         # 7. Compute Weighted Scoring on the fused candidate pool
-        scored_candidates = WeightedScorer.score_candidates(candidate_movies, intent, semantic_scores_subset)
+        from app.services.ranking_service import RankingService
+        scored_candidates = RankingService.rank_candidates(candidate_movies, intent, semantic_scores_subset)
         
         # Apply diversity step
-        diversified_candidates = apply_diversity(scored_candidates)
+        diversified_candidates = RankingService.apply_diversity(scored_candidates)
         top_candidates = diversified_candidates[:limit]
         
         elapsed = round((time.perf_counter() - t_start) * 1000, 2)
