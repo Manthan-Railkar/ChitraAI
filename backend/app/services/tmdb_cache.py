@@ -46,6 +46,13 @@ class TMDbCacheManager:
                     fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS discover_cache (
+                    query_hash TEXT PRIMARY KEY,
+                    response_json TEXT,
+                    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
             conn.commit()
 
 
@@ -108,4 +115,33 @@ class TMDbCacheManager:
                 conn.commit()
         except Exception as e:
             logger.warning(f"Failed to save IMDb mapping cache for imdb_id={imdb_id}: {e}")
+
+    def get_discover_results(self, query_hash: str) -> Optional[Dict[str, Any]]:
+        """Retrieves cached discover results, if present."""
+        try:
+            with closing(self._get_connection()) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT response_json FROM discover_cache WHERE query_hash = ?",
+                    (query_hash,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    return json.loads(row[0])
+        except Exception as e:
+            logger.warning(f"Failed to read discover cache for query_hash={query_hash}: {e}")
+        return None
+
+    def save_discover_results(self, query_hash: str, response: Dict[str, Any]) -> None:
+        """Saves discover results to cache."""
+        try:
+            response_str = json.dumps(response, ensure_ascii=False)
+            with closing(self._get_connection()) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO discover_cache (query_hash, response_json) VALUES (?, ?)",
+                    (query_hash, response_str)
+                )
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Failed to save discover cache for query_hash={query_hash}: {e}")
 

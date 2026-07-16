@@ -100,7 +100,113 @@ class RecommendationService:
             logger.warning(f"[Movie Lookup Fallback] Movie '{search_title}' not found in TMDb or local database.")
             return intent, []
 
-        # 2. Retrieve candidates locally
+        # 2. Retrieve candidates from TMDb Discover if enabled, otherwise fallback to local engine
+        from app.core.config import settings
+        if settings.USE_TMDB_RETRIEVAL and self.tmdb_service and self.tmdb_service.api_key:
+            try:
+                logger.info("[TMDb Retrieval] Using TMDb Discover API for candidate retrieval.")
+                from app.services.tmdb_query_builder import TMDbQueryBuilder
+                discover_params = await TMDbQueryBuilder.build_query(intent, self.tmdb_service)
+                logger.info(f"[TMDb Retrieval] Discover params: {discover_params}")
+
+                discover_response = await self.tmdb_service.discover_movies(discover_params)
+                
+                candidates = []
+                if discover_response:
+                    results_list = discover_response.get("results", [])
+                    target_candidates = results_list[:30]
+                    
+                    import asyncio
+                    tasks = [self.tmdb_service.fetch_movie_details(m.get("id")) for m in target_candidates if m.get("id")]
+                    details_list = await asyncio.gather(*tasks)
+                    
+                    for details in details_list:
+                        if not details:
+                            continue
+                        tmdb_id = details.get("id")
+                        movie_dict = {
+                            "tmdb_id": tmdb_id,
+                            "title": details.get("title"),
+                            "original_title": details.get("original_title"),
+                            "overview": details.get("overview"),
+                            "genres": [g.get("name") for g in details.get("genres", []) if g.get("name")],
+                            "release_year": int(details.get("release_date", "0000")[:4]) if details.get("release_date") else None,
+                            "rating_value": details.get("vote_average"),
+                            "vote_count": details.get("vote_count"),
+                            "popularity": details.get("popularity"),
+                            "poster_path": details.get("poster_path"),
+                            "backdrop_path": details.get("backdrop_path"),
+                            "tagline": details.get("tagline"),
+                            "keywords": [k.get("name") for k in details.get("keywords", {}).get("keywords", []) if k.get("name")],
+                            "cast": [m.get("name") for m in details.get("credits", {}).get("cast", [])[:10]],
+                            "directors": [m.get("name") for m in details.get("credits", {}).get("crew", []) if m.get("job") == "Director"]
+                        }
+                        candidates.append(movie_dict)
+
+                if candidates:
+                    query_doc = f"{query}. Genres: {', '.join(intent.genres)}. Themes: {', '.join(intent.themes)}. Moods: {', '.join(intent.moods)}. Keywords: {', '.join(intent.keywords)}."
+                    query_vector = self.local_retrieval_engine.embedding_service.encode_single(query_doc, normalize=True)
+                    
+                    def build_temp_document(movie: dict) -> str:
+                        parts = [f"Title: {movie.get('title')}"]
+                        if movie.get("genres"):
+                            parts.append(f"Genres: {', '.join(movie.get('genres'))}")
+                        if movie.get("directors"):
+                            parts.append(f"Directed by: {', '.join(movie.get('directors'))}")
+                        if movie.get("cast"):
+                            parts.append(f"Starring: {', '.join(movie.get('cast'))}")
+                        if movie.get("keywords"):
+                            parts.append(f"Keywords: {', '.join(movie.get('keywords'))}")
+                        if movie.get("overview"):
+                            parts.append(movie.get("overview"))
+                        return "\n".join(parts)
+                    
+                    candidate_docs = [build_temp_document(m) for m in candidates]
+                    candidate_embs = self.local_retrieval_engine.embedding_service.encode_batch(candidate_docs, normalize=True)
+                    
+                    import numpy as np
+                    semantic_scores = np.dot(candidate_embs, query_vector)
+                    
+                    from app.services.local_retrieval import WeightedScorer, apply_diversity
+                    scored_candidates = WeightedScorer.score_candidates(candidates, intent, semantic_scores)
+                    
+                    diversified_candidates = apply_diversity(scored_candidates)
+                    top_candidates = diversified_candidates[:limit]
+                    
+                    def format_debug_candidate(movie: dict, final_score: float = 0.0) -> dict:
+                        return {
+                            "title": movie.get("title"),
+                            "tmdb_id": movie.get("tmdb_id"),
+                            "genres": movie.get("genres") or [],
+                            "semantic_score": round(float(movie.get("semantic_score") or 0.0), 4),
+                            "bm25_score": 0.0,
+                            "metadata_match_score": 0.0,
+                            "rating": movie.get("rating_value") or movie.get("rating"),
+                            "vote_count": movie.get("vote_count"),
+                            "popularity": movie.get("popularity"),
+                            "final_score": round(float(final_score), 4)
+                        }
+
+                    self.local_retrieval_engine.last_debug_report = {
+                        "query": query,
+                        "intent": intent.model_dump() if hasattr(intent, "model_dump") else str(intent),
+                        "top_100_metadata_candidates": [],
+                        "top_100_semantic_candidates": [format_debug_candidate(m) for m in candidates],
+                        "top_100_bm25_candidates": [],
+                        "candidate_fusion_output": [format_debug_candidate(m, final_score=m.get("retrieval_score") or 0.0) for m in scored_candidates],
+                        "top_20_ranked_movies": [format_debug_candidate(m, final_score=m.get("retrieval_score") or 0.0) for m in scored_candidates[:20]],
+                        "selected_top_3": [format_debug_candidate(m, final_score=m.get("retrieval_score") or 0.0) for m in top_candidates],
+                        "execution_time_ms": 0.0
+                    }
+                    
+                    logger.info(f"[TMDb Retrieval] Success. Candidates retrieved: {len(top_candidates)}")
+                    return intent, top_candidates
+                else:
+                    logger.warning("[TMDb Retrieval] Discover returned 0 candidates. Falling back to local retrieval...")
+            except Exception as e:
+                logger.error(f"[TMDb Retrieval] Discover retrieval failed: {e}. Falling back to local retrieval...")
+
+        # 3. Retrieve candidates locally (Fallback)
         results = await self.local_retrieval_engine.retrieve_candidates(
             original_query=query,
             intent=intent,

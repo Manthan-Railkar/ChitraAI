@@ -1,5 +1,7 @@
 import asyncio
 import time
+import json
+import hashlib
 from typing import Any, Dict, Optional, List
 from loguru import logger
 import httpx
@@ -195,3 +197,80 @@ class TMDbService:
             if results:
                 return results[0].get("id")
         return None
+
+    async def discover_movies(self, extra_params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Queries the TMDb /discover/movie API with the provided parameters,
+        handling caching and concurrency semaphores.
+        """
+        # Convert params to a sorted JSON string to make it deterministic
+        sorted_params_str = json.dumps(extra_params, sort_keys=True)
+        query_hash = hashlib.md5(sorted_params_str.encode("utf-8")).hexdigest()
+
+        # Check local cache
+        cached = self.cache.get_discover_results(query_hash)
+        if cached is not None:
+            logger.info(f"[TMDb API] Discover results fetched from cache (hash: {query_hash})")
+            return cached
+
+        if not self.api_key:
+            logger.warning("[TMDb API] No API Key set. Skipping discover request.")
+            return None
+
+        # Fetch from API
+        endpoint = "discover/movie"
+        client = self.get_client()
+        response = await self._make_request(client, endpoint, extra_params)
+
+        if response:
+            self.cache.save_discover_results(query_hash, response)
+
+        return response
+
+    async def resolve_keyword_id(self, keyword: str) -> Optional[int]:
+        """Resolves a keyword string to its TMDb keyword ID using cached search."""
+        key = f"kw:{keyword.lower()}"
+        cached_id = self.cache.get_tmdb_id_by_imdb(key)
+        if cached_id is not None:
+            return cached_id if cached_id > 0 else None
+
+        if not self.api_key:
+            return None
+
+        endpoint = "search/keyword"
+        extra_params = {"query": keyword}
+        client = self.get_client()
+        response = await self._make_request(client, endpoint, extra_params)
+        
+        kw_id = None
+        if response:
+            results = response.get("results", [])
+            if results:
+                kw_id = results[0].get("id")
+                
+        self.cache.save_imdb_mapping(key, kw_id or 0)
+        return kw_id
+
+    async def resolve_person_id(self, name: str) -> Optional[int]:
+        """Resolves a person's name to their TMDb person ID using cached search."""
+        key = f"person:{name.lower()}"
+        cached_id = self.cache.get_tmdb_id_by_imdb(key)
+        if cached_id is not None:
+            return cached_id if cached_id > 0 else None
+
+        if not self.api_key:
+            return None
+
+        endpoint = "search/person"
+        extra_params = {"query": name}
+        client = self.get_client()
+        response = await self._make_request(client, endpoint, extra_params)
+        
+        person_id = None
+        if response:
+            results = response.get("results", [])
+            if results:
+                person_id = results[0].get("id")
+                
+        self.cache.save_imdb_mapping(key, person_id or 0)
+        return person_id

@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     MAX_RETRIES: int = 2
     TMDB_SEMAPHORE_LIMIT: int = 10
     FUSION_CANDIDATES_LIMIT: int = 1000
+    USE_TMDB_RETRIEVAL: bool = True
 
 
 
