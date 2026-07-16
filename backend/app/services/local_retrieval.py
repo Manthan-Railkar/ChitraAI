@@ -11,6 +11,7 @@ from rank_bm25 import BM25Okapi
 from app.core.config import settings
 from app.services.embedding_service import EmbeddingService
 from app.services.intent_extractor import RecommendationIntent
+from app.services.ranking_service import RankingService
 
 
 def tokenize(text: str) -> List[str]:
@@ -69,7 +70,8 @@ class StructuredFilter:
         # 3. Hard Filter: Preferred Language
         if intent.language:
             lang_code = StructuredFilter.map_language_to_code(intent.language)
-            lf = lf.filter(pl.col("languages").cast(pl.List(pl.String)).list.contains(lang_code))
+            if lang_code:
+                lf = lf.filter(pl.col("languages").cast(pl.List(pl.String)).list.contains(lang_code))
 
         # 4. Hard Filter: Release Year constraints
         if intent.year_range:
@@ -111,15 +113,20 @@ class StructuredFilter:
         return lf.collect()
 
     @staticmethod
-    def map_language_to_code(lang: str) -> str:
-        """Maps full language names or codes to standard ISO 639-1 code."""
+    def map_language_to_code(lang: str) -> Optional[str]:
+        """Maps full language names or codes to standard ISO 639-1 code. Returns None if invalid."""
         lang_lower = lang.lower().strip()
         mapping = {
             "english": "en", "french": "fr", "spanish": "es", "german": "de",
             "italian": "it", "japanese": "ja", "korean": "ko", "chinese": "zh",
-            "russian": "ru", "portuguese": "pt", "hindi": "hi", "swedish": "sv"
+            "russian": "ru", "portuguese": "pt", "hindi": "hi", "swedish": "sv",
+            "cantonese": "cn", "mandarin": "zh"
         }
-        return mapping.get(lang_lower, lang_lower[:2])
+        if lang_lower in mapping:
+            return mapping[lang_lower]
+        if len(lang_lower) == 2 and lang_lower in set(mapping.values()):
+            return lang_lower
+        return None
 
 
 class SemanticSimilarityCalculator:
@@ -216,6 +223,12 @@ class WeightedScorer:
             semantic_score = float(semantic_scores[idx])
             title = movie.get("title", "")
             
+            # Initialize scores to prevent uninitialized variable warning/errors
+            award_score = 0.0
+            classic_year_score = 0.0
+            underrated_pop_score = 0.0
+            recent_year_score = 0.0
+            
             # 1. Genre Overlap
             movie_genres = [g.lower() for g in (movie.get("genres") or [])]
             genre_score = 0.0
@@ -286,11 +299,28 @@ class WeightedScorer:
                 matches = sum(1 for t in pref_themes if t in movie_keywords_lower or t in movie_genres_lower or t in movie_overview_lower)
                 theme_score = matches / len(pref_themes)
 
+            # Calculate award, classic, and recent year scores
+            award_score = calculate_award_score(movie)
+            year_val = float(movie.get("release_year") or 1990)
+            classic_year_score = max(0.0, min(1.0, (1990 - year_val) / 50.0))
+            recent_year_score = max(0.0, min(1.0, (year_val - 2000) / 26.0))
+
+            # Calculate pacing & complexity match scores
+            complexity_score = 0.0
+            if intent.complexity == "mind_bending":
+                complexity_score = len(set(movie_keywords) & {"mind-bending", "time travel", "illusion", "reality", "twist", "psychological", "puzzle"}) / 3.0
+                complexity_score = min(1.0, complexity_score)
+            
+            pacing_score = 0.0
+            if intent.pacing == "slow_burn":
+                pacing_score = 1.0 if any(k in movie_keywords for k in ["slow burn", "slow-burn", "atmospheric", "character study", "meditative"]) else 0.0
+            elif intent.pacing == "fast_paced":
+                pacing_score = 1.0 if any(k in movie_keywords for k in ["fast paced", "fast-paced", "action packed", "action-packed", "quick paced", "thrill ride", "adrenaline"]) else 0.0
+
             # Select ranking score based on intent's ranking mode
             if ranking_mode == "best":
                 quality_rating_score = get_quality_rating_score(rating, votes)
                 vote_count_score = min(1.0, math.log1p(votes) / 12.0)
-                award_score = calculate_award_score(movie)
                 # Boost popularity for BEST queries
                 popularity_score = min(1.0, math.log1p(pop) / 5.0)
                 
@@ -329,8 +359,6 @@ class WeightedScorer:
             elif ranking_mode == "classic":
                 quality_rating_score = get_quality_rating_score(rating, votes)
                 vote_count_score = min(1.0, math.log1p(votes) / 12.0)
-                year = float(movie.get("release_year") or 1990)
-                classic_year_score = max(0.0, min(1.0, (1990 - year) / 50.0))
                 
                 retrieval_score = (
                     0.30 * classic_year_score +
@@ -354,8 +382,6 @@ class WeightedScorer:
                 )
             elif ranking_mode == "recent":
                 quality_rating_score = get_quality_rating_score(rating, votes)
-                year = float(movie.get("release_year") or 2015)
-                recent_year_score = max(0.0, min(1.0, (year - 2000) / 26.0))
                 
                 retrieval_score = (
                     0.30 * recent_year_score +
@@ -374,6 +400,15 @@ class WeightedScorer:
                     0.10 * popularity_score
                 )
 
+            # Decouple award and novelty signals from mode and blend them in
+            if intent.awards_preference and intent.awards_preference != "neutral" and ranking_mode != "best":
+                retrieval_score += 0.10 * award_score
+            
+            if intent.novelty_preference == "classic" and ranking_mode != "classic":
+                retrieval_score += 0.15 * classic_year_score
+            elif intent.novelty_preference in ("recent", "new_release", "upcoming", "trending") and ranking_mode != "recent":
+                retrieval_score += 0.15 * recent_year_score
+
             # Step 6: Genre Constraints (mandatory)
             missing_genre_penalty = 0.0
             if pref_genres:
@@ -388,9 +423,9 @@ class WeightedScorer:
             matched_a = [a for a in (movie.get("cast") or []) if a.lower() in pref_actors]
             matched_d = [d for d in (movie.get("directors") or []) if d.lower() in pref_directors]
 
-            # Step 9: Better Recommendation Explanation
             reason = ""
-            genres_phrase = " ".join(movie.get("genres")[:3])
+            genres_list = movie.get("genres") or []
+            genres_phrase = " ".join(genres_list[:3])
             
             if ranking_mode == "best":
                 reasons = []
@@ -451,10 +486,12 @@ class WeightedScorer:
                 "boosted_semantic_score": boosted_semantic_score,
                 "mood_score": mood_score,
                 "theme_score": theme_score,
-                "award_score": award_score if ranking_mode == "best" else 0.0,
-                "classic_year_score": classic_year_score if ranking_mode == "classic" else 0.0,
-                "underrated_pop_score": underrated_pop_score if ranking_mode == "underrated" else 0.0,
-                "recent_year_score": recent_year_score if ranking_mode == "recent" else 0.0,
+                "award_score": award_score,
+                "classic_year_score": classic_year_score,
+                "underrated_pop_score": underrated_pop_score,
+                "recent_year_score": recent_year_score,
+                "pacing_score": pacing_score,
+                "complexity_score": complexity_score,
                 "missing_genre_penalty": missing_genre_penalty
             }
 
@@ -472,8 +509,7 @@ class WeightedScorer:
         
         for rank, item in enumerate(raw_scored):
             movie = item["movie"]
-            # Relative confidence score mapping
-            conf_val = max(0.75, 0.98 - rank * 0.03)
+            match_percentage = RankingService.calculate_match_percentage(movie, intent, item["semantic_score"])
             
             movie_scored = {
                 "id": str(movie.get("tmdb_id")),
@@ -493,7 +529,7 @@ class WeightedScorer:
                 "tagline": movie.get("tagline"),
                 "semantic_score": round(item["semantic_score"], 4),
                 "boosted_semantic_score": round(item["boosted_semantic_score"], 4),
-                "confidence_score": round(conf_val, 4),
+                "confidence_score": match_percentage,
                 "reranked_score": round(item["retrieval_score"], 4),
                 "retrieval_score": round(item["retrieval_score"], 4),
                 "recommendation_reason": item["reason"],
@@ -506,92 +542,8 @@ class WeightedScorer:
 
 def apply_diversity(scored_movies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Greedily reranks scored movies to diversify the final recommendations."""
-    if len(scored_movies) <= 1:
-        return scored_movies
-        
-    diverse_list = []
-    remaining = list(scored_movies)
-    
-    # Always keep the top choice
-    diverse_list.append(remaining.pop(0))
-    
-    while len(diverse_list) < len(scored_movies) and remaining:
-        # If we already have 3 diverse movies, we can append the rest of remaining and exit
-        if len(diverse_list) >= 3:
-            diverse_list.extend(remaining)
-            break
-            
-        best_candidate_idx = 0
-        best_effective_score = -9999.0
-        
-        # Scan a window of the top candidates to find the most diverse alternative
-        scan_window = min(15, len(remaining))
-        
-        for i in range(scan_window):
-            candidate = remaining[i]
-            base_score = candidate["retrieval_score"]
-            
-            penalty = 0.0
-            for selected in diverse_list:
-                # 1. Title/Sequel Check (Franchise)
-                sel_title = selected.get("title", "").lower()
-                cand_title = candidate.get("title", "").lower()
-                
-                # Check if titles share significant words (excluding common small words)
-                sel_words = set(re.findall(r'[a-z]+', sel_title)) - {"the", "a", "an", "of", "and", "in", "to", "for"}
-                cand_words = set(re.findall(r'[a-z]+', cand_title)) - {"the", "a", "an", "of", "and", "in", "to", "for"}
-                
-                shared_words = sel_words & cand_words
-                if len(shared_words) >= 2 or (len(shared_words) >= 1 and any(w in ["story", "matrix", "alien", "wars", "knight", "godfather", "trek"] for w in shared_words)):
-                    penalty += 0.25
-                
-                # Collection Check
-                sel_coll = selected.get("collection_name")
-                cand_coll = candidate.get("collection_name")
-                if sel_coll and cand_coll and sel_coll == cand_coll:
-                    penalty += 0.30
-                    
-                # 2. Cast overlap check (sharing more than 2 cast members)
-                sel_cast = set(c.lower() for c in (selected.get("cast") or []))
-                cand_cast = set(c.lower() for c in (candidate.get("cast") or []))
-                if sel_cast and cand_cast:
-                    shared_cast = sel_cast & cand_cast
-                    if len(shared_cast) >= 2:
-                        penalty += 0.20
-                        
-                # 3. Director overlap check (sharing same director)
-                sel_dirs = set(d.lower() for d in (selected.get("directors") or []))
-                cand_dirs = set(d.lower() for d in (candidate.get("directors") or []))
-                if sel_dirs and cand_dirs and (sel_dirs & cand_dirs):
-                    penalty += 0.25
-                    
-                # 4. Release Era check (same decade / close years)
-                sel_year = selected.get("release_year")
-                cand_year = candidate.get("release_year")
-                if sel_year and cand_year:
-                    if abs(sel_year - cand_year) <= 5:
-                        penalty += 0.05
-                        
-                # 5. Theme/Genre overlap check
-                sel_genres = set(g.lower() for g in (selected.get("genres") or []))
-                cand_genres = set(g.lower() for g in (candidate.get("genres") or []))
-                shared_genres = sel_genres & cand_genres
-                
-                sel_keywords = set(k.lower() for k in (selected.get("keywords") or []))
-                cand_keywords = set(k.lower() for k in (candidate.get("keywords") or []))
-                shared_kws = sel_keywords & cand_keywords
-                
-                if len(shared_genres) >= 2 and len(shared_kws) >= 3:
-                    penalty += 0.15
-            
-            effective_score = base_score - penalty
-            if effective_score > best_effective_score:
-                best_effective_score = effective_score
-                best_candidate_idx = i
-                
-        diverse_list.append(remaining.pop(best_candidate_idx))
-        
-    return diverse_list
+    from app.services.ranking_service import RankingService
+    return RankingService.apply_diversity(scored_movies)
 
 
 class LocalRetrievalEngine:
@@ -637,7 +589,7 @@ class LocalRetrievalEngine:
         aligned_df = self.movies_df.select(["tmdb_id"]).join(emb_df, on="tmdb_id", how="inner")
         
         # 1. Extract raw embeddings efficiently without generating 17M+ python float objects
-        raw_embs = np.vstack(aligned_df.select("embedding").to_series().to_numpy()).astype(np.float32)
+        raw_embs = np.vstack(list(aligned_df.select("embedding").to_series().to_numpy())).astype(np.float32)
         self.embeddings_matrix = raw_embs
         
         norms = np.linalg.norm(self.embeddings_matrix, axis=1, keepdims=True)
@@ -704,15 +656,18 @@ class LocalRetrievalEngine:
         self.embeddings_dir.mkdir(parents=True, exist_ok=True)
         
         logger.info("Building metadata documents to embed...")
+        if self.movies_df is None:
+            raise ValueError("self.movies_df is not initialized.")
+        df = self.movies_df
         docs = []
-        tmdb_ids = self.movies_df.select("tmdb_id").to_series().to_list()
-        titles = self.movies_df.select("title").to_series().to_list()
-        taglines = self.movies_df.select("tagline").to_series().to_list()
-        overviews = self.movies_df.select("overview").to_series().to_list()
-        genres_list = self.movies_df.select("genres").to_series().to_list()
-        keywords_list = self.movies_df.select("keywords").to_series().to_list()
-        cast_list = self.movies_df.select("cast").to_series().to_list()
-        directors_list = self.movies_df.select("directors").to_series().to_list()
+        tmdb_ids = df.select("tmdb_id").to_series().to_list()
+        titles = df.select("title").to_series().to_list()
+        taglines = df.select("tagline").to_series().to_list()
+        overviews = df.select("overview").to_series().to_list()
+        genres_list = df.select("genres").to_series().to_list()
+        keywords_list = df.select("keywords").to_series().to_list()
+        cast_list = df.select("cast").to_series().to_list()
+        directors_list = df.select("directors").to_series().to_list()
         
         for idx in range(len(tmdb_ids)):
             doc = build_embedding_document(
@@ -777,17 +732,22 @@ class LocalRetrievalEngine:
             self.movies_df = self.movies_df.with_columns(df_idx_series)
             self.movies_df = self.movies_df.join(mapping_df, on="tmdb_id", how="left")
 
+        df = self.movies_df
+        embeddings_matrix = self.embeddings_matrix
+        if df is None or embeddings_matrix is None:
+            raise ValueError("LocalRetrievalEngine failed to initialize.")
+
         # Ensure BM25 index is built (fallback for injected mock DataFrames in tests)
         if self.bm25 is None:
             self._build_bm25_index()
         
         # 1. Apply Structured Hard Filters
-        filtered_df = StructuredFilter.filter_movies(self.movies_df, intent)
+        filtered_df = StructuredFilter.filter_movies(df, intent)
         filtered_count = filtered_df.height
         logger.debug(f"Candidate count after hard filters: {filtered_count}")
         
         relaxed = False
-        relaxation_threshold = 1 if self.movies_df.height <= 10 else min(5, limit)
+        relaxation_threshold = 1 if df.height <= 10 else min(5, limit)
         if filtered_count < relaxation_threshold and (intent.preferred_actors or intent.preferred_directors or intent.genres or intent.year_range or intent.runtime):
             logger.warning(f"Filter pool is too small ({filtered_count} candidates). Relaxing filters...")
             relaxed = True
@@ -796,14 +756,14 @@ class LocalRetrievalEngine:
             relaxed_intent = intent.model_copy()
             relaxed_intent.preferred_actors = []
             relaxed_intent.preferred_directors = []
-            filtered_df = StructuredFilter.filter_movies(self.movies_df, relaxed_intent)
+            filtered_df = StructuredFilter.filter_movies(df, relaxed_intent)
             filtered_count = filtered_df.height
             logger.debug(f"Count after relaxing actors/directors: {filtered_count}")
             
             # Step 2: Relax genres
             if filtered_count < relaxation_threshold and intent.genres:
                 relaxed_intent.genres = []
-                filtered_df = StructuredFilter.filter_movies(self.movies_df, relaxed_intent)
+                filtered_df = StructuredFilter.filter_movies(df, relaxed_intent)
                 filtered_count = filtered_df.height
                 logger.debug(f"Count after relaxing genres: {filtered_count}")
                 
@@ -811,7 +771,7 @@ class LocalRetrievalEngine:
             if filtered_count < relaxation_threshold:
                 relaxed_intent.year_range = None
                 relaxed_intent.runtime = None
-                filtered_df = StructuredFilter.filter_movies(self.movies_df, relaxed_intent)
+                filtered_df = StructuredFilter.filter_movies(df, relaxed_intent)
                 filtered_count = filtered_df.height
                 logger.debug(f"Count after relaxing year & runtime: {filtered_count}")
                 
@@ -824,11 +784,33 @@ class LocalRetrievalEngine:
 
         # 2. Get embeddings of matching candidates directly from Polars Series
         candidate_indices = filtered_df.select("embedding_idx").to_series().to_numpy()
-        candidate_embs = self.embeddings_matrix[candidate_indices]
+        candidate_embs = embeddings_matrix[candidate_indices]
         
-        # 3. Embed query intent locally for semantic retrieval
-        query_doc = f"{original_query}. Genres: {', '.join(intent.genres)}. Themes: {', '.join(intent.themes)}. Moods: {', '.join(intent.moods)}. Keywords: {', '.join(intent.keywords)}."
-        query_vector = self.embedding_service.encode_single(query_doc, normalize=True)
+        pipeline_pathway = "funnel"
+        if intent.similar_movies and intent.ranking_mode in ("similar", "similar_movie"):
+            pipeline_pathway = "similarity"
+        elif getattr(intent, "strict_person_filter", False) and (intent.preferred_directors or intent.preferred_actors):
+            pipeline_pathway = "strict_person"
+
+        query_vector = None
+        if pipeline_pathway == "similarity":
+            # Try to resolve reference movie embedding from local database
+            for ref_title in intent.similar_movies:
+                # Find matching movie in df
+                ref_df = df.filter(pl.col("title").str.to_lowercase() == ref_title.lower())
+                if ref_df.height == 0:
+                    ref_df = df.filter(pl.col("title").str.to_lowercase().str.contains(ref_title.lower()))
+                if ref_df.height > 0:
+                    ref_emb_idx = ref_df.select("embedding_idx").to_series()[0]
+                    if ref_emb_idx is not None:
+                        query_vector = embeddings_matrix[ref_emb_idx]
+                        logger.info(f"[Local Similarity Engine] Using embedding of reference movie: '{ref_df.select('title').to_series()[0]}'")
+                        break
+
+        if query_vector is None:
+            # 3. Embed query intent locally for semantic retrieval
+            query_doc = f"{original_query}. Genres: {', '.join(intent.genres)}. Themes: {', '.join(intent.themes)}. Moods: {', '.join(intent.moods)}. Keywords: {', '.join(intent.keywords)}."
+            query_vector = self.embedding_service.encode_single(query_doc, normalize=True)
         
         # 4. Compute semantic cosine similarity locally
         semantic_scores = SemanticSimilarityCalculator.compute_similarities(query_vector, candidate_embs)
@@ -856,7 +838,10 @@ class LocalRetrievalEngine:
         bm25_query_tokens = tokenize(bm25_query_str)
         
         # Calculate BM25 scores for all movies
-        all_bm25_scores = self.bm25.get_scores(bm25_query_tokens)
+        bm25 = self.bm25
+        if bm25 is None:
+            raise ValueError("BM25 index is not built.")
+        all_bm25_scores = bm25.get_scores(bm25_query_tokens)
         
         # Extract BM25 scores for candidates efficiently
         candidate_df_indices = filtered_df.select("df_idx").to_series().to_numpy()
@@ -951,23 +936,11 @@ class LocalRetrievalEngine:
         top_sem = filtered_df.sort("semantic_score", descending=True).head(100).to_dicts()
         top_bm25 = filtered_df.sort("norm_bm25", descending=True).head(100).to_dicts()
 
-        # Sort and take Top FUSION_CANDIDATES_LIMIT
-        top_fused_df = filtered_df.sort("fusion_score", descending=True).head(settings.FUSION_CANDIDATES_LIMIT)
-        top_fusion = top_fused_df.to_dicts()
-        
-        candidate_movies = top_fusion
-        semantic_scores_subset = top_fused_df.select("semantic_score").to_series().to_numpy().astype(np.float32)
+        # --- STAGE 1: Broad Retrieval (Fusion top 50) ---
+        top_fused_df = filtered_df.sort("fusion_score", descending=True).head(50)
+        stage_1_candidates = top_fused_df.to_dicts()
+        stage_1_semantic_scores = top_fused_df.select("semantic_score").to_series().to_list()
 
-        # 7. Compute Weighted Scoring on the fused candidate pool
-        from app.services.ranking_service import RankingService
-        scored_candidates = RankingService.rank_candidates(candidate_movies, intent, semantic_scores_subset)
-        
-        # Apply diversity step
-        diversified_candidates = RankingService.apply_diversity(scored_candidates)
-        top_candidates = diversified_candidates[:limit]
-        
-        elapsed = round((time.perf_counter() - t_start) * 1000, 2)
-        
         # Helper to format debug candidate
         def format_debug_candidate(movie: dict, final_score: float = 0.0) -> dict:
             return {
@@ -980,19 +953,100 @@ class LocalRetrievalEngine:
                 "rating": movie.get("rating_value") or movie.get("rating"),
                 "vote_count": movie.get("vote_count"),
                 "popularity": movie.get("popularity"),
-                "final_score": round(float(final_score), 4)
+                "final_score": round(final_score, 4)
             }
+
+        stage_1_log = [format_debug_candidate(m, final_score=m.get("fusion_score") or 0.0) for m in stage_1_candidates]
+
+        if stage_1_candidates:
+            # --- STAGE 2: Semantic Narrowing (50 -> 15) ---
+            # Sort candidates by semantic score
+            semantic_sorted = sorted(
+                zip(stage_1_candidates, stage_1_semantic_scores),
+                key=lambda x: x[1],
+                reverse=True
+            )
+            
+            # Sort candidates by BM25 score
+            bm25_sorted = sorted(
+                stage_1_candidates,
+                key=lambda x: x.get("norm_bm25") or 0.0,
+                reverse=True
+            )
+            
+            # Build Stage 2 candidates by taking top semantic and top BM25
+            stage_2_pairs = []
+            seen_ids = set()
+            
+            # 1. Add top semantic matches
+            for m, s in semantic_sorted:
+                m_id = m.get("tmdb_id")
+                if m_id not in seen_ids:
+                    stage_2_pairs.append((m, s))
+                    seen_ids.add(m_id)
+                if len(stage_2_pairs) >= 10:
+                    break
+                    
+            # 2. Add top BM25 matches to fill up to 15
+            for m in bm25_sorted:
+                m_id = m.get("tmdb_id")
+                if m_id not in seen_ids:
+                    # Find its semantic score
+                    s_score = next((x[1] for x in semantic_sorted if x[0].get("tmdb_id") == m_id), 0.0)
+                    stage_2_pairs.append((m, s_score))
+                    seen_ids.add(m_id)
+                if len(stage_2_pairs) >= 15:
+                    break
+                    
+            # Fallback if less than 15 unique candidates
+            for m, s in semantic_sorted:
+                if len(stage_2_pairs) >= 15:
+                    break
+                m_id = m.get("tmdb_id")
+                if m_id not in seen_ids:
+                    stage_2_pairs.append((m, s))
+                    seen_ids.add(m_id)
+                    
+            stage_2_candidates = [pair[0] for pair in stage_2_pairs]
+            stage_2_semantic_scores = [pair[1] for pair in stage_2_pairs]
+
+            stage_2_log = [format_debug_candidate(m, final_score=s) for m, s in stage_2_pairs]
+
+            # --- STAGE 3: Smart Ranking (15 -> final N) ---
+            from app.services.ranking_service import RankingService
+            scored_candidates = RankingService.rank_candidates(stage_2_candidates, intent, stage_2_semantic_scores)
+
+            diversified_candidates = RankingService.apply_diversity(scored_candidates)
+            top_candidates = diversified_candidates[:limit]
+            stage_3_log = [format_debug_candidate(m, final_score=m.get("retrieval_score") or 0.0) for m in top_candidates]
+        else:
+            stage_2_candidates = []
+            scored_candidates = []
+            top_candidates = []
+            stage_2_log = []
+            stage_3_log = []
+
+        elapsed = round((time.perf_counter() - t_start) * 1000, 2)
 
         # Build detailed debug report
         self.last_debug_report = {
             "query": original_query,
             "intent": intent.model_dump() if hasattr(intent, "model_dump") else str(intent),
+            "pipeline_pathway": pipeline_pathway,
+            "retrieval_path": "Local",
             "top_100_metadata_candidates": [format_debug_candidate(m) for m in top_meta],
             "top_100_semantic_candidates": [format_debug_candidate(m) for m in top_sem],
             "top_100_bm25_candidates": [format_debug_candidate(m) for m in top_bm25],
-            "candidate_fusion_output": [format_debug_candidate(m, final_score=m.get("fusion_score") or 0.0) for m in top_fusion],
-            "top_20_ranked_movies": [format_debug_candidate(m, final_score=m.get("retrieval_score") or 0.0) for m in scored_candidates[:20]],
-            "selected_top_3": [format_debug_candidate(m, final_score=m.get("retrieval_score") or 0.0) for m in top_candidates],
+            "stage_1_broad_retrieval": stage_1_log,
+            "stage_2_semantic_narrowing": stage_2_log,
+            "stage_3_final_ranking": stage_3_log,
+            "funnel_summary": {
+                "stage_1_count": len(stage_1_candidates),
+                "stage_2_count": len(stage_2_candidates),
+                "stage_3_count": len(top_candidates),
+                "execution_time_ms": elapsed
+            },
+            "final_ranking_scores": {m.get("title"): round(float(m.get("retrieval_score") or 0.0), 4) for m in scored_candidates if m.get("title")},
             "execution_time_ms": elapsed
         }
 
@@ -1022,81 +1076,7 @@ class LocalRetrievalEngine:
         return top_candidates
 
 
-def apply_diversity(scored_movies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Greedily reranks scored movies to diversify the final recommendations."""
-    if len(scored_movies) <= 1:
-        return scored_movies
-        
-    diverse_list = []
-    remaining = list(scored_movies)
-    
-    # Always keep the top choice
-    diverse_list.append(remaining.pop(0))
-    
-    while len(diverse_list) < len(scored_movies) and remaining:
-        # If we already have 3 diverse movies, we can append the rest of remaining and exit
-        if len(diverse_list) >= 3:
-            diverse_list.extend(remaining)
-            break
-            
-        best_candidate_idx = 0
-        best_effective_score = -9999.0
-        
-        # Scan a window of the top candidates to find the most diverse alternative
-        scan_window = min(15, len(remaining))
-        
-        for i in range(scan_window):
-            candidate = remaining[i]
-            base_score = candidate["retrieval_score"]
-            
-            penalty = 0.0
-            for selected in diverse_list:
-                # 1. Title/Sequel Check (Franchise)
-                sel_title = selected.get("title", "").lower()
-                cand_title = candidate.get("title", "").lower()
-                
-                # Check if titles share significant words (excluding common small words)
-                sel_words = set(re.findall(r'[a-z]+', sel_title)) - {"the", "a", "an", "of", "and", "in", "to", "for"}
-                cand_words = set(re.findall(r'[a-z]+', cand_title)) - {"the", "a", "an", "of", "and", "in", "to", "for"}
-                
-                shared_words = sel_words & cand_words
-                if len(shared_words) >= 2 or (len(shared_words) >= 1 and any(w in ["story", "matrix", "alien", "wars", "knight", "godfather", "trek"] for w in shared_words)):
-                    penalty += 0.25
-                
-                # Collection Check
-                sel_coll = selected.get("collection_name")
-                cand_coll = candidate.get("collection_name")
-                if sel_coll and cand_coll and sel_coll == cand_coll:
-                    penalty += 0.30
-                    
-                # 2. Cast overlap check (sharing more than 2 cast members)
-                sel_cast = set(c.lower() for c in (selected.get("cast") or []))
-                cand_cast = set(c.lower() for c in (candidate.get("cast") or []))
-                if sel_cast and cand_cast:
-                    shared_cast = sel_cast & cand_cast
-                    if len(shared_cast) >= 2:
-                        penalty += 0.20
-                        
-                # 3. Theme/Genre overlap check
-                sel_genres = set(g.lower() for g in (selected.get("genres") or []))
-                cand_genres = set(g.lower() for g in (candidate.get("genres") or []))
-                shared_genres = sel_genres & cand_genres
-                
-                sel_keywords = set(k.lower() for k in (selected.get("keywords") or []))
-                cand_keywords = set(k.lower() for k in (candidate.get("keywords") or []))
-                shared_kws = sel_keywords & cand_keywords
-                
-                if len(shared_genres) >= 2 and len(shared_kws) >= 3:
-                    penalty += 0.15
-            
-            effective_score = base_score - penalty
-            if effective_score > best_effective_score:
-                best_effective_score = effective_score
-                best_candidate_idx = i
-                
-        diverse_list.append(remaining.pop(best_candidate_idx))
-        
-    return diverse_list
+# Canonical apply_diversity is defined in RankingService. Module-level apply_diversity forwards to it.
 
 
 def build_embedding_document(

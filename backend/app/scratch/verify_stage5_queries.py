@@ -1,0 +1,47 @@
+import asyncio
+import httpx
+import json
+import io
+import sys
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+BASE_URL = "http://127.0.0.1:8002"
+
+QUERIES = [
+    "Best superhero movie",
+    "Best crime movie",
+    "Best sci-fi movie",
+    "Mind bending movies",
+    "Movies like Interstellar",
+    "Best animated movie",
+    "Best comedy movie",
+    "Psychological thriller"
+]
+
+async def check_query(client, query):
+    url = f"{BASE_URL}/api/v1/recommendations/semantic"
+    params = {"q": query, "limit": 3}
+    try:
+        resp = await client.get(url, params=params, timeout=60.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            recs = data.get("recommendations", [])
+            print(f"\nQUERY: '{query}'")
+            print(f"  Selected strategy: {data.get('metadata', {}).get('debug_report', {}).get('retrieval_strategy')}")
+            for idx, r in enumerate(recs):
+                print(f"    {idx+1}. {r.get('title')} ({r.get('release_year')})")
+                print(f"       Rating: {r.get('rating')} | Vote Count: {r.get('vote_count')} | Popularity: {r.get('popularity')}")
+                print(f"       Reason: {r.get('recommendation_reason')}")
+        else:
+            print(f"\nQUERY: '{query}' failed with status {resp.status_code}: {resp.text}")
+    except Exception as e:
+        print(f"\nQUERY: '{query}' failed with error: {e}")
+
+async def main():
+    async with httpx.AsyncClient() as client:
+        for q in QUERIES:
+            await check_query(client, q)
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -190,6 +190,104 @@ def evaluate_semantic_confidence(results: List[Dict[str, Any]], limit: int) -> f
 import json
 from pathlib import Path
 
+def compute_evaluation_metrics(
+    query: str,
+    intent: Any,
+    candidates_pool: List[Dict[str, Any]],
+    top_recommendations: List[Dict[str, Any]]
+) -> Tuple[List[str], List[str], List[str]]:
+    """
+    Computes Expected, Irrelevant, and Missing recommendations dynamically based on intent and scores.
+    """
+    expected = []
+    irrelevant = []
+    missing = []
+    
+    pref_genres = {g.lower() for g in intent.genres} if intent.genres else set()
+    pref_actors = {a.lower() for a in intent.preferred_actors} if intent.preferred_actors else set()
+    pref_directors = {d.lower() for d in intent.preferred_directors} if intent.preferred_directors else set()
+    
+    # Predefined benchmark mapping for exact validation query matches
+    benchmark_map = {
+        "best superhero movie": ["The Dark Knight", "The Avengers", "Spider-Man: Into the Spider-Verse", "Iron Man", "The Dark Knight Rises"],
+        "best crime movie": ["The Godfather", "Pulp Fiction", "Goodfellas", "Scarface", "The Departed"],
+        "best sci-fi movie": ["Interstellar", "Inception", "The Matrix", "2001: A Space Odyssey", "Blade Runner 2049"],
+        "mind bending movies": ["Inception", "Interstellar", "Shutter Island", "Memento", "The Prestige"],
+        "movies like interstellar": ["Gravity", "The Martian", "Contact", "Arrival", "2001: A Space Odyssey"],
+        "best animated movie": ["Spirited Away", "Toy Story", "Spider-Man: Into the Spider-Verse", "Coco", "WALL·E"],
+        "best comedy movie": ["Superbad", "The Hangover", "Monty Python and the Holy Grail", "Step Brothers"],
+        "psychological thriller": ["Shutter Island", "Se7en", "The Silence of the Lambs", "Black Swan", "Gone Girl"],
+        "palme dor winner slow burn mystery": ["Anatomy of a Fall", "Parasite", "Blow-Up", "The White Ribbon"],
+        "studio ghibli style family safe fantasy": ["Spirited Away", "My Neighbor Totoro", "Howl's Moving Castle", "Princess Mononoke", "Ponyo"],
+        "underrated a24 thriller": ["Green Room", "It Comes at Night", "Under the Silver Lake", "The Killing of a Sacred Deer"],
+        "fast paced action movies starring tom cruise": ["Mission: Impossible - Fallout", "Edge of Tomorrow", "Top Gun: Maverick", "Minority Report"],
+        "niche mind-bending sci-fi": ["Coherence", "Primer", "Upstream Color", "Predestination", "The Man from Earth"]
+    }
+    
+    # Normalize query: lowercase, remove punctuation except spaces
+    import re
+    query_clean = re.sub(r"[^\w\s]", "", query.lower().strip())
+    
+    static_expected = []
+    for bk, val in benchmark_map.items():
+        bk_clean = re.sub(r"[^\w\s]", "", bk)
+        if bk_clean in query_clean or query_clean in bk_clean:
+            static_expected = val
+            break
+            
+    top_titles = [r.get("title") for r in top_recommendations[:10] if r.get("title")]
+    top_titles_lower = [t.lower() for t in top_titles]
+    
+    if static_expected:
+        expected = [t for t in static_expected if t.lower() in top_titles_lower]
+        pool_titles = {c.get("title").lower(): c.get("title") for c in candidates_pool if c.get("title")}
+        for exp in static_expected:
+            if exp.lower() not in top_titles_lower and exp.lower() in pool_titles:
+                missing.append(pool_titles[exp.lower()])
+    else:
+        # Dynamic Expected definition:
+        for c in candidates_pool[:50]:
+            title = c.get("title")
+            if not title:
+                continue
+            
+            movie_genres = {g.lower() for g in (c.get("genres") or [])}
+            movie_cast = {a.lower() for a in (c.get("cast") or [])}
+            movie_dirs = {d.lower() for d in (c.get("directors") or [])}
+            
+            genre_match = bool(pref_genres & movie_genres) if pref_genres else True
+            actor_match = bool(pref_actors & movie_cast) if pref_actors else True
+            dir_match = bool(pref_directors & movie_dirs) if pref_directors else True
+            
+            if genre_match and actor_match and dir_match:
+                if title in top_titles:
+                    expected.append(title)
+                else:
+                    missing.append(title)
+                    
+    # Irrelevant: movies in top 10 that fail fundamental intent filters
+    for r in top_recommendations[:10]:
+        title = r.get("title")
+        if not title:
+            continue
+        movie_genres = {g.lower() for g in (r.get("genres") or [])}
+        
+        avoid_genres = {g.lower() for g in intent.avoid_genres} if intent.avoid_genres else set()
+        avoid_movies = {m.lower() for m in intent.avoid_movies} if intent.avoid_movies else set()
+        
+        is_irrelevant = False
+        if avoid_genres & movie_genres:
+            is_irrelevant = True
+        elif title.lower() in avoid_movies:
+            is_irrelevant = True
+        elif pref_genres and not (pref_genres & movie_genres):
+            is_irrelevant = True
+            
+        if is_irrelevant:
+            irrelevant.append(title)
+            
+    return expected[:10], irrelevant[:10], missing[:10]
+
 def log_structured_debug_report(report: dict) -> None:
     """Writes a structured log of the recommendation request to logs/recommendation_debug.log."""
     try:
@@ -274,21 +372,107 @@ async def execute_recommendation_flow(
         engine = recommendation_service.local_retrieval_engine
         debug_report = getattr(engine, "last_debug_report", None)
         
+        # Determine retrieval path used
+        retrieval_path = "Local"
+        if debug_report and debug_report.get("retrieval_path"):
+            retrieval_path = debug_report["retrieval_path"]
+        elif search_intent == "movie_lookup" and results:
+            reason = results[0].get("recommendation_reason", "")
+            if "TMDb lookup" in reason:
+                retrieval_path = "TMDb Lookup"
+            else:
+                retrieval_path = "Local Lookup"
+        elif settings.USE_TMDB_RETRIEVAL and recommendation_service.tmdb_service and recommendation_service.tmdb_service.api_key:
+            retrieval_path = "TMDb"
+
+        # Construct intent JSON
+        intent_json = intent.model_dump() if hasattr(intent, "model_dump") else str(intent)
+
+        # Get candidate pool and top 50 movies
+        candidates_pool = []
+        top_50_movies = []
+        if debug_report:
+            if "top_50_candidates_before_ranking" in debug_report:
+                candidates_pool = debug_report["top_50_candidates_before_ranking"]
+            elif "candidate_fusion_output" in debug_report:
+                candidates_pool = debug_report["candidate_fusion_output"]
+            
+            if candidates_pool:
+                top_50_movies = [c.get("title") for c in candidates_pool[:50] if c.get("title")]
+
+        if not top_50_movies:
+            top_50_movies = [r.get("title") for r in results[:50] if r.get("title")]
+            candidates_pool = results
+
+        # Top 10 recommendations and final scores
+        top_10_recs = [r.get("title") for r in results[:10] if r.get("title")]
+        
+        # Get final ranking scores from debug report (unsliced) if available
+        if debug_report and "final_ranking_scores" in debug_report:
+            final_ranking_scores = debug_report["final_ranking_scores"]
+        else:
+            final_ranking_scores = {r.get("title"): round(float(r.get("retrieval_score") or r.get("reranked_score") or 0.0), 4) for r in results if r.get("title")}
+
+        # Truncation Warning Guard
+        final_len = len(results)
+        candidate_pool_size = len(final_ranking_scores) if final_ranking_scores else final_len
+        expected_min_len = min(limit, candidate_pool_size)
+        if final_len < expected_min_len:
+            logger.warning(
+                f"[TRUNCATION WARNING] Recommendation count ({final_len}) is less than expected ({expected_min_len}). "
+                f"Requested limit: {limit}, candidate pool size: {candidate_pool_size}."
+            )
+
+        # Compute dynamic evaluation lists
+        expected, irrelevant, missing = compute_evaluation_metrics(query, intent, candidates_pool, results)
+
+        # Structured console logging for audit
+        logger.info(
+            f"\n" + "="*80 + "\n"
+            f"=== RECOMMENDATION GENERATION AUDIT LOG ===\n"
+            f"Prompt: '{query}'\n"
+            f"Which retrieval path was used (TMDb or Local): {retrieval_path}\n"
+            f"LLM intent JSON:\n{json.dumps(intent_json, indent=2)}\n"
+            f"Top 50 movies out of which you are ranking candidates:\n{json.dumps(top_50_movies, indent=2)}\n"
+            f"Top 10 recommendations:\n{json.dumps(top_10_recs, indent=2)}\n"
+            f"Expected recommendations:\n{json.dumps(expected, indent=2)}\n"
+            f"Irrelevant recommendations:\n{json.dumps(irrelevant, indent=2)}\n"
+            f"Missing recommendations:\n{json.dumps(missing, indent=2)}\n"
+            f"Final ranking scores:\n{json.dumps(final_ranking_scores, indent=2)}\n"
+            f"Time taken: {elapsed_time_ms} ms\n"
+            + "="*80 + "\n"
+        )
+
         # If it was movie_lookup bypass, construct a direct search debug report
         if search_intent == "movie_lookup" or not debug_report or debug_report.get("query") != query:
             debug_report = {
                 "query": query,
-                "intent": intent.model_dump() if hasattr(intent, "model_dump") else str(intent),
+                "intent": intent_json,
+                "retrieval_path": retrieval_path,
                 "message": "Movie lookup direct search executed.",
                 "execution_time_ms": elapsed_time_ms
             }
-            if engine:
+            if engine is not None:
                 engine.last_debug_report = debug_report
+
+        # Log evaluation metrics to log file as well
+        debug_report["audit_evaluation"] = {
+            "query": query,
+            "retrieval_path": retrieval_path,
+            "intent": intent_json,
+            "top_50_candidates": top_50_movies,
+            "top_10_recommendations": top_10_recs,
+            "expected_recommendations": expected,
+            "irrelevant_recommendations": irrelevant,
+            "missing_recommendations": missing,
+            "final_ranking_scores": final_ranking_scores,
+            "execution_time_ms": elapsed_time_ms
+        }
 
         if debug_report:
             log_structured_debug_report(debug_report)
 
-        metadata = {
+        metadata: Dict[str, Any] = {
             "pagination": {
                 "page": 1,
                 "limit": limit,
@@ -378,12 +562,16 @@ async def get_recommendations_by_movie(
     logger.info(f"API similar movies request for movie_id='{movie_id}', limit={limit}")
     start_time = time.perf_counter()
 
-    if local_engine.movies_df is None:
+    df = local_engine.movies_df
+    if df is None:
         local_engine.initialize()
+        df = local_engine.movies_df
+        if df is None:
+            raise HTTPException(status_code=500, detail="Local movie database not initialized.")
 
     # 1. Retrieve the source movie to compare metadata
     from app.api.routes.movie import get_movie_by_id
-    source_movie = get_movie_by_id(local_engine.movies_df, movie_id)
+    source_movie = get_movie_by_id(df, movie_id)
     if not source_movie:
         raise HTTPException(status_code=404, detail=f"Source movie with ID '{movie_id}' not found.")
 
@@ -395,12 +583,16 @@ async def get_recommendations_by_movie(
 
     # 2. Extract vector embedding of the source movie
     source_vector = None
+    embeddings_matrix = local_engine.embeddings_matrix
+    if embeddings_matrix is None:
+        raise HTTPException(status_code=500, detail="Embeddings matrix not loaded.")
+        
     if source_tmdb_id in local_engine.tmdb_id_to_idx:
         idx = local_engine.tmdb_id_to_idx[source_tmdb_id]
-        source_vector = local_engine.embeddings_matrix[idx]
+        source_vector = embeddings_matrix[idx]
     else:
         doc = build_embedding_document(
-            title=source_movie.get("title"),
+            title=str(source_movie.get("title") or ""),
             tagline=source_movie.get("tagline"),
             overview=source_movie.get("overview"),
             genres=source_movie.get("genres") or [],
@@ -411,7 +603,7 @@ async def get_recommendations_by_movie(
         source_vector = local_engine.embedding_service.encode_single(doc, normalize=True)
 
     # 3. Retrieve similar points in local engine (excluding the source movie)
-    candidates_df = local_engine.movies_df.filter(pl.col("tmdb_id") != source_tmdb_id)
+    candidates_df = df.filter(pl.col("tmdb_id") != source_tmdb_id)
     valid_tmdb_ids = list(local_engine.tmdb_id_to_idx.keys())
     candidates_df = candidates_df.filter(pl.col("tmdb_id").is_in(valid_tmdb_ids))
     
@@ -432,7 +624,7 @@ async def get_recommendations_by_movie(
 
     candidate_ids = candidates_df.select("tmdb_id").to_series().to_list()
     candidate_indices = [local_engine.tmdb_id_to_idx[tid] for tid in candidate_ids]
-    candidate_embs = local_engine.embeddings_matrix[candidate_indices]
+    candidate_embs = embeddings_matrix[candidate_indices]
 
     semantic_scores = SemanticSimilarityCalculator.compute_similarities(source_vector, candidate_embs)
     candidates_df = candidates_df.with_columns(pl.Series("semantic_score", semantic_scores))
@@ -557,7 +749,7 @@ async def get_recommendations_by_movie(
             "rating": movie.get("rating_value") or movie.get("rating"),
             "vote_count": movie.get("vote_count"),
             "popularity": movie.get("popularity"),
-            "final_score": round(float(final_score), 4)
+            "final_score": round(final_score, 4)
         }
 
     top_sem_candidates = sorted(results, key=lambda x: x["semantic_score"], reverse=True)[:100]
@@ -577,12 +769,12 @@ async def get_recommendations_by_movie(
         "execution_time_ms": elapsed_time_ms
     }
 
-    if local_engine:
+    if local_engine is not None:
         local_engine.last_debug_report = debug_report
 
     log_structured_debug_report(debug_report)
 
-    metadata = {
+    metadata: Dict[str, Any] = {
         "pagination": {
             "page": 1,
             "limit": limit,

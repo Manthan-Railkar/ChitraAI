@@ -81,9 +81,11 @@ class TMDbQueryBuilder:
 
         # 3. Language mapping
         if intent.language:
-            lang_lower = intent.language.lower()
+            lang_lower = intent.language.lower().strip()
             if lang_lower in TMDB_LANGUAGE_MAP:
                 params["with_original_language"] = TMDB_LANGUAGE_MAP[lang_lower]
+            elif len(lang_lower) == 2 and lang_lower in set(TMDB_LANGUAGE_MAP.values()):
+                params["with_original_language"] = lang_lower
 
         # 4. Release year/range constraints
         if intent.release_year:
@@ -127,9 +129,9 @@ class TMDbQueryBuilder:
         # 9. Ranking mode mapping (sorting, vote/rating quality guidelines)
         mode = getattr(intent, "ranking_mode", "default")
         if mode == "best":
-            params["sort_by"] = "vote_average.desc"
+            params["sort_by"] = "popularity.desc"
             params["vote_count.gte"] = 100
-            params["vote_average.gte"] = 7.0
+            params["vote_average.gte"] = 6.5
         elif mode == "similar_movie":
             params["sort_by"] = "popularity.desc"
             params["vote_count.gte"] = 50

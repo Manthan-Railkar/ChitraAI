@@ -241,6 +241,75 @@ class TestIntentRoutingAndDynamicRanking(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(results[0]["title"], "Toy Story")
             self.assertEqual(results[0]["tmdb_id"], 103)
 
+    def test_apply_diversity_preserves_limit_and_order(self):
+        """Verify that apply_diversity retains all elements, only diversifying top 3 and keeping rest in descending score order."""
+        # 1. Direct test of apply_diversity with 15 candidates
+        scored_candidates = [
+            {
+                "id": str(i),
+                "tmdb_id": i,
+                "title": f"Movie {i}",
+                "retrieval_score": 1.0 - i * 0.05,
+                "cast": [f"Actor {i}"],
+                "directors": [f"Director {i}"],
+                "genres": ["Action"]
+            }
+            for i in range(15)
+        ]
+        
+        diversified = apply_diversity(scored_candidates)
+        self.assertEqual(len(diversified), 15)
+        
+        # Verify first element remains first
+        self.assertEqual(diversified[0]["title"], "Movie 0")
+        
+        # 2. Integration test of retrieve_candidates with 15 mock movies and limit=10
+        self.local_engine.movies_df = pl.DataFrame([
+            {
+                "tmdb_id": i,
+                "imdb_id": f"tt{i}",
+                "title": f"Movie {i}",
+                "original_title": f"Movie {i}",
+                "overview": f"Overview {i}",
+                "plot_summary": None,
+                "genres": ["Action"],
+                "cast": [f"Actor {i}"],
+                "directors": [f"Director {i}"],
+                "writers": [],
+                "runtime_minutes": 100,
+                "release_year": 2000 + i,
+                "rating_value": 7.0 + (i * 0.1),
+                "vote_count": 1000,
+                "popularity": 50.0 + i,
+                "poster_path": None,
+                "backdrop_path": None,
+                "tagline": None,
+                "keywords": [],
+                "collection_name": None
+            }
+            for i in range(15)
+        ])
+        
+        # Align embeddings index
+        self.local_engine.embeddings_matrix = np.zeros((15, 768), dtype=np.float32)
+        self.local_engine.tmdb_id_to_idx = {i: i for i in range(15)}
+        self.local_engine.tmdb_id_to_df_idx = {i: i for i in range(15)}
+        
+        # Add index columns
+        height = self.local_engine.movies_df.height
+        df_idx_series = pl.Series("df_idx", range(height), dtype=pl.Int64)
+        emb_idx_series = pl.Series("embedding_idx", range(height), dtype=pl.Int64)
+        self.local_engine.movies_df = self.local_engine.movies_df.with_columns([df_idx_series, emb_idx_series])
+        
+        # Build mock BM25 index
+        self.local_engine._build_bm25_index()
+        
+        intent = RecommendationIntent(genres=["Action"])
+        results = asyncio.run(self.local_engine.retrieve_candidates(original_query="Action query", intent=intent, limit=10))
+        
+        # Assert final recommendations has exactly limit=10 items
+        self.assertEqual(len(results), 10)
+
 
 if __name__ == "__main__":
     unittest.main()

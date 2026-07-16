@@ -56,18 +56,36 @@ class TMDbCacheManager:
             conn.commit()
 
 
+    def _is_expired(self, fetched_at_str: str, ttl_seconds: int) -> bool:
+        """Checks if a cached entry has expired based on its timestamp."""
+        try:
+            import datetime
+            from datetime import timezone
+            # SQLite CURRENT_TIMESTAMP is in UTC format: 'YYYY-MM-DD HH:MM:SS'
+            dt = datetime.datetime.strptime(fetched_at_str, "%Y-%m-%d %H:%M:%S")
+            dt = dt.replace(tzinfo=timezone.utc)
+            elapsed = (datetime.datetime.now(timezone.utc) - dt).total_seconds()
+            return elapsed > ttl_seconds
+        except Exception as e:
+            logger.warning(f"Error parsing cache timestamp {fetched_at_str}: {e}")
+            return True
+
     def get_movie_details(self, tmdb_id: int) -> Optional[Dict[str, Any]]:
-        """Retrieves cached movie details response, if present."""
+        """Retrieves cached movie details response, if present and not expired."""
         try:
             with closing(self._get_connection()) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT response_json FROM movie_details_cache WHERE tmdb_id = ?",
+                    "SELECT response_json, fetched_at FROM movie_details_cache WHERE tmdb_id = ?",
                     (tmdb_id,)
                 )
                 row = cursor.fetchone()
                 if row:
-                    return json.loads(row[0])
+                    response_json, fetched_at = row
+                    if not self._is_expired(fetched_at, settings.CACHE_TTL_MOVIE_DETAILS):
+                        return json.loads(response_json)
+                    else:
+                        logger.info(f"[TMDb Cache] Expired movie details for tmdb_id={tmdb_id}")
         except Exception as e:
             logger.warning(f"Failed to read movie details cache for tmdb_id={tmdb_id}: {e}")
         return None
@@ -79,7 +97,7 @@ class TMDbCacheManager:
             response_str = json.dumps(response, ensure_ascii=False)
             with closing(self._get_connection()) as conn:
                 conn.execute(
-                    "INSERT OR REPLACE INTO movie_details_cache (tmdb_id, response_json) VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO movie_details_cache (tmdb_id, response_json, fetched_at) VALUES (?, ?, datetime('now'))",
                     (tmdb_id, response_str)
                 )
                 conn.commit()
@@ -109,7 +127,7 @@ class TMDbCacheManager:
         try:
             with closing(self._get_connection()) as conn:
                 conn.execute(
-                    "INSERT OR REPLACE INTO imdb_find_cache (imdb_id, tmdb_id) VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO imdb_find_cache (imdb_id, tmdb_id, fetched_at) VALUES (?, ?, datetime('now'))",
                     (imdb_id, tmdb_id)
                 )
                 conn.commit()
@@ -117,31 +135,36 @@ class TMDbCacheManager:
             logger.warning(f"Failed to save IMDb mapping cache for imdb_id={imdb_id}: {e}")
 
     def get_discover_results(self, query_hash: str) -> Optional[Dict[str, Any]]:
-        """Retrieves cached discover results, if present."""
+        """Retrieves cached discover/list results, if present and not expired."""
         try:
             with closing(self._get_connection()) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT response_json FROM discover_cache WHERE query_hash = ?",
+                    "SELECT response_json, fetched_at FROM discover_cache WHERE query_hash = ?",
                     (query_hash,)
                 )
                 row = cursor.fetchone()
                 if row:
-                    return json.loads(row[0])
+                    response_json, fetched_at = row
+                    if not self._is_expired(fetched_at, settings.CACHE_TTL_DISCOVER):
+                        return json.loads(response_json)
+                    else:
+                        logger.info(f"[TMDb Cache] Expired discover results for query_hash={query_hash}")
         except Exception as e:
             logger.warning(f"Failed to read discover cache for query_hash={query_hash}: {e}")
         return None
 
     def save_discover_results(self, query_hash: str, response: Dict[str, Any]) -> None:
-        """Saves discover results to cache."""
+        """Saves discover/list results to cache."""
         try:
             response_str = json.dumps(response, ensure_ascii=False)
             with closing(self._get_connection()) as conn:
                 conn.execute(
-                    "INSERT OR REPLACE INTO discover_cache (query_hash, response_json) VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO discover_cache (query_hash, response_json, fetched_at) VALUES (?, ?, datetime('now'))",
                     (query_hash, response_str)
                 )
                 conn.commit()
         except Exception as e:
             logger.warning(f"Failed to save discover cache for query_hash={query_hash}: {e}")
+
 

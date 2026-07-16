@@ -41,11 +41,14 @@ async def enrich_movie_with_tmdb(movie: Dict[str, Any], tmdb_service: TMDbServic
             movie["status"] = details.get("status")
             movie["original_language"] = details.get("original_language")
             movie["production_countries"] = [c.get("name") for c in details.get("production_countries", []) if c.get("name")]
+            movie["production_companies"] = [c.get("name") for c in details.get("production_companies", []) if c.get("name")]
             movie["budget"] = details.get("budget")
             movie["revenue"] = details.get("revenue")
             movie["homepage"] = details.get("homepage")
             movie["adult"] = details.get("adult")
             movie["video"] = details.get("video")
+            movie["vote_count"] = details.get("vote_count") or movie.get("vote_count")
+            movie["rating_value"] = details.get("vote_average") or movie.get("rating_value") or movie.get("rating")
             
             # Collection / Franchise
             col_name = None

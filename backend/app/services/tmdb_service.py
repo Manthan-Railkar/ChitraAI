@@ -274,3 +274,54 @@ class TMDbService:
                 
         self.cache.save_imdb_mapping(key, person_id or 0)
         return person_id
+
+    async def fetch_cached_list(self, endpoint: str, extra_params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """Generic method to fetch list responses (like top_rated, popular, trending, similar) with cache support."""
+        params = extra_params or {}
+        # Make a deterministic key of endpoint and params
+        key_str = f"{endpoint}:{json.dumps(params, sort_keys=True)}"
+        query_hash = hashlib.md5(key_str.encode("utf-8")).hexdigest()
+        
+        # Check local cache
+        cached = self.cache.get_discover_results(query_hash)
+        if cached is not None:
+            logger.info(f"[TMDb API] {endpoint} results fetched from cache (hash: {query_hash})")
+            return cached
+            
+        if not self.api_key:
+            logger.warning(f"[TMDb API] No API Key set. Skipping {endpoint} request.")
+            return None
+            
+        client = self.get_client()
+        response = await self._make_request(client, endpoint, params)
+        if response:
+            self.cache.save_discover_results(query_hash, response)
+        return response
+
+    async def fetch_top_rated(self, extra_params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        return await self.fetch_cached_list("movie/top_rated", extra_params)
+
+    async def fetch_popular(self, extra_params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        return await self.fetch_cached_list("movie/popular", extra_params)
+
+    async def fetch_now_playing(self, extra_params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        return await self.fetch_cached_list("movie/now_playing", extra_params)
+
+    async def fetch_upcoming(self, extra_params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        return await self.fetch_cached_list("movie/upcoming", extra_params)
+
+    async def fetch_trending(self, extra_params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        return await self.fetch_cached_list("trending/movie/week", extra_params)
+
+    async def fetch_similar(self, movie_id: int, extra_params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        return await self.fetch_cached_list(f"movie/{movie_id}/similar", extra_params)
+
+    async def fetch_recommendations(self, movie_id: int, extra_params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        return await self.fetch_cached_list(f"movie/{movie_id}/recommendations", extra_params)
+
+    async def fetch_person_movie_credits(self, person_id: int) -> Optional[Dict[str, Any]]:
+        return await self.fetch_cached_list(f"person/{person_id}/movie_credits")
+
+    async def fetch_collection_details(self, collection_id: int) -> Optional[Dict[str, Any]]:
+        return await self.fetch_cached_list(f"collection/{collection_id}")
+

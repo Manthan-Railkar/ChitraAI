@@ -35,6 +35,21 @@ class RecommendationIntent(BaseModel):
     legacy_soft_genre: bool = Field(False, description="Internal flag for backward compatibility to treat genre as soft preference")
     release_year: Optional[int] = Field(None, description="Exact release year constraint")
     exclusions: List[str] = Field(default_factory=list, description="Explicit exclusions (genres, themes, actors, or movie titles the user wants to avoid)")
+    ref_collections: List[str] = Field(default_factory=list, description="Collections/franchises associated with referenced movies")
+    popularity_preference: Optional[str] = Field(None, description="Popularity preference: 'popular', 'hidden_gem', 'niche', 'neutral'")
+    critical_acclaim_preference: Optional[str] = Field(None, description="Critical acclaim preference: 'high', 'neutral'")
+    novelty_preference: Optional[str] = Field(None, description="Novelty preference: 'classic', 'recent', 'trending', 'new_release', 'upcoming', 'neutral'")
+    awards_preference: Optional[str] = Field(None, description="Awards preference: 'oscar', 'cannes', 'sundance', 'bafta', 'golden_globe', 'palme_d_or', 'any', 'neutral'")
+    complexity: Optional[str] = Field(None, description="Complexity preference: 'mind_bending', 'complex', 'simple', 'neutral'")
+    pacing: Optional[str] = Field(None, description="Pacing preference: 'slow_burn', 'fast_paced', 'moderate', 'neutral'")
+    studio: Optional[str] = Field(None, description="Preferred production company or studio (e.g. A24, Pixar, Marvel, Studio Ghibli, Disney)")
+    universe_franchise: Optional[str] = Field(None, description="Preferred movie universe or franchise (e.g. MCU, Star Wars, Harry Potter)")
+    country: Optional[str] = Field(None, description="Preferred movie origin country (e.g. South Korea, Japan, France)")
+    streaming_preference: Optional[str] = Field(None, description="Preferred streaming platform (e.g. Netflix, Prime Video, Disney+)")
+    family_safety: Optional[str] = Field(None, description="Family safety/rating constraint: 'family_safe', 'mature', 'neutral'")
+    violence_level: Optional[str] = Field(None, description="Violence level: 'low', 'high', 'neutral'")
+    strict_person_filter: bool = Field(False, description="When True, treat preferred_directors/preferred_actors as hard filters (only return movies featuring that person)")
+    explicit_genres: Optional[List[str]] = Field(default=None, description="Explicit user requested genres before theme expansion")
 
 
 class IntentCache:
@@ -150,6 +165,32 @@ class IntentExtractor(LLMIntentExtractor):
             self._cache.set(cleaned_query, local_intent)
             return local_intent
 
+        # 3b. Local heuristic for person-specific queries (e.g. "movies by Christopher Nolan", "Nolan films")
+        person_patterns = [
+            r'^(?:movies?|films?)\s+(?:by|directed by|from)\s+(.+)$',
+            r'^(?:movies?|films?)\s+(?:with|starring|featuring)\s+(.+)$',
+            r'^(.+?)\s+(?:movies?|films?|filmography|directed)$',
+            r'^(?:directed by|films? by)\s+(.+)$',
+        ]
+        for pattern in person_patterns:
+            match = re.match(pattern, query_cleaned)
+            if match:
+                person_name = match.group(1).strip()
+                # Capitalize each word for proper name formatting
+                person_name_formatted = " ".join(w.capitalize() for w in person_name.split())
+                # Determine if director or actor based on query phrasing
+                is_director = any(kw in query_cleaned for kw in ["directed by", "directed", "by"])
+                logger.info(f"[Local Intent Router] Person-specific query detected: '{cleaned_query}' -> person='{person_name_formatted}', is_director={is_director}")
+                person_intent = RecommendationIntent(
+                    intent="recommendation",
+                    ranking_mode="default",
+                    preferred_directors=[person_name_formatted] if is_director else [],
+                    preferred_actors=[person_name_formatted] if not is_director else [],
+                    strict_person_filter=True
+                )
+                self._cache.set(cleaned_query, person_intent)
+                return person_intent
+
         # 4. Check if query is extremely simple (no LLM call required)
         words = re.findall(r'[a-zA-Z0-9\-]+', query_cleaned)
         if len(words) <= 3:
@@ -168,19 +209,40 @@ class IntentExtractor(LLMIntentExtractor):
         logger.info(f"[Intent Cache] MISS for query: '{cleaned_query}'. Calling {self.provider} API...")
         
         system_prompt = (
-            "You extract movie intent.\n"
-            "Return ONLY valid JSON.\n"
-            "No markdown.\n"
-            "No explanation.\n"
-            "No additional text.\n"
-            "Return exactly this schema:\n"
+            "You are a movie query analyzer. Your task is to decompose any natural language user query about movies "
+            "into a highly structured intent JSON object. Extract themes, moods, and preferences accurately.\n"
+            "Return ONLY valid JSON. Do not include markdown blocks, explanation, or extra text.\n"
+            "Return exactly this JSON schema:\n"
             "{\n"
-            '  "intent":"",\n'
-            '  "movie_name":"",\n'
-            '  "genres":[],\n'
-            '  "similar_movies":[],\n'
-            '  "keywords":[],\n'
-            '  "ranking_mode":""\n'
+            '  "intent": "recommendation" or "movie_lookup" or "general_search",\n'
+            '  "ranking_mode": "best" or "similar" or "mood" or "discover" or "classic" or "recent" or "default",\n'
+            '  "genres": [],\n'
+            '  "similar_movies": [],\n'
+            '  "keywords": [],\n'
+            '  "moods": [],\n'
+            '  "themes": [],\n'
+            '  "preferred_actors": [],\n'
+            '  "preferred_directors": [],\n'
+            '  "language": null,\n'
+            '  "year_range": {"start": null, "end": null},\n'
+            '  "runtime": null,\n'
+            '  "avoid_movies": [],\n'
+            '  "avoid_genres": [],\n'
+            '  "release_year": null,\n'
+            '  "exclusions": [],\n'
+            '  "popularity_preference": "popular" or "hidden_gem" or "niche" or "neutral",\n'
+            '  "critical_acclaim_preference": "high" or "neutral",\n'
+            '  "novelty_preference": "classic" or "recent" or "trending" or "new_release" or "upcoming" or "neutral",\n'
+            '  "awards_preference": "oscar" or "cannes" or "sundance" or "bafta" or "golden_globe" or "palme_d_or" or "any" or "neutral",\n'
+            '  "complexity": "mind_bending" or "complex" or "simple" or "neutral",\n'
+            '  "pacing": "slow_burn" or "fast_paced" or "moderate" or "neutral",\n'
+            '  "studio": null,\n'
+            '  "universe_franchise": null,\n'
+            '  "country": null,\n'
+            '  "streaming_preference": null,\n'
+            '  "family_safety": "family_safe" or "mature" or "neutral",\n'
+            '  "violence_level": "low" or "high" or "neutral",\n'
+            '  "strict_person_filter": true or false  (set true ONLY when the query is clearly about a specific person\'s filmography, e.g. \"Christopher Nolan movies\", \"films with Tom Hanks\", \"directed by Kubrick\". Set false for general queries that merely mention an actor/director as one preference among many.)\n'
             "}"
         )
         user_prompt = cleaned_query
@@ -251,20 +313,50 @@ class IntentExtractor(LLMIntentExtractor):
                 else:
                     ranking_mode = "default"
 
-            mapped_data = {
-                "intent": data.get("intent") or "recommendation",
-                "ranking_mode": ranking_mode,
-                "genres": data.get("genres") or [],
-                "similar_movies": data.get("similar_movies") or [],
-                "keywords": data.get("keywords") or [],
-            }
+            yr = data.get("year_range")
+            year_range_obj = None
+            if isinstance(yr, dict):
+                year_range_obj = YearRange(start=yr.get("start"), end=yr.get("end"))
             
             # Merge movie_name to similar_movies
+            similar_movies = data.get("similar_movies") or []
+            if not isinstance(similar_movies, list):
+                similar_movies = [similar_movies]
             movie_name = data.get("movie_name")
-            if movie_name and movie_name not in mapped_data["similar_movies"]:
-                mapped_data["similar_movies"] = [movie_name] + mapped_data["similar_movies"]
+            if movie_name and movie_name not in similar_movies:
+                similar_movies = [movie_name] + similar_movies
                 
-            return RecommendationIntent(**mapped_data)
+            return RecommendationIntent(
+                intent=data.get("intent") or "recommendation",
+                ranking_mode=ranking_mode,
+                genres=data.get("genres") or [],
+                similar_movies=similar_movies,
+                keywords=data.get("keywords") or [],
+                moods=data.get("moods") or data.get("mood") or [],
+                themes=data.get("themes") or [],
+                preferred_actors=data.get("preferred_actors") or data.get("actors") or [],
+                preferred_directors=data.get("preferred_directors") or data.get("directors") or [],
+                language=data.get("language"),
+                runtime=data.get("runtime"),
+                avoid_movies=data.get("avoid_movies") or [],
+                avoid_genres=data.get("avoid_genres") or [],
+                release_year=data.get("release_year"),
+                exclusions=data.get("exclusions") or [],
+                popularity_preference=data.get("popularity_preference"),
+                critical_acclaim_preference=data.get("critical_acclaim_preference"),
+                novelty_preference=data.get("novelty_preference"),
+                awards_preference=data.get("awards_preference"),
+                complexity=data.get("complexity"),
+                pacing=data.get("pacing"),
+                studio=data.get("studio"),
+                universe_franchise=data.get("universe_franchise"),
+                country=data.get("country"),
+                streaming_preference=data.get("streaming_preference"),
+                family_safety=data.get("family_safety"),
+                violence_level=data.get("violence_level"),
+                strict_person_filter=bool(data.get("strict_person_filter", False)),
+                year_range=year_range_obj
+            )
         except Exception as e:
             logger.debug(f"JSON parsing/validation failed: {e}")
             return None
@@ -415,6 +507,93 @@ class IntentExtractor(LLMIntentExtractor):
         if dir_match:
             preferred_directors.append(dir_match.group(1).strip())
 
+        # Heuristic query decomposition preferences
+        popularity_preference = None
+        if re.search(r'\b(hidden gem|underrated|unappreciated|niche|unknown|obscure)\b', q):
+            popularity_preference = "hidden_gem"
+        elif re.search(r'\b(popular|blockbuster|famous|hit|mainstream)\b', q):
+            popularity_preference = "popular"
+
+        critical_acclaim_preference = None
+        if re.search(r'\b(best|top|masterpiece|acclaimed|highly rated|critically acclaimed)\b', q):
+            critical_acclaim_preference = "high"
+
+        novelty_preference = None
+        if re.search(r'\b(classic|old|vintage|golden era|retro|ancient)\b', q):
+            novelty_preference = "classic"
+        elif re.search(r'\b(recent|new|modern|latest|recently released)\b', q):
+            novelty_preference = "recent"
+        elif re.search(r'\b(trending|popular right now|viral|now popular)\b', q):
+            novelty_preference = "trending"
+        elif re.search(r'\b(upcoming|soon|future)\b', q):
+            novelty_preference = "upcoming"
+
+        awards_preference = None
+        if re.search(r'\b(oscar|academy award)\b', q):
+            awards_preference = "oscar"
+        elif re.search(r'\b(cannes|palme d\'or|palme dor)\b', q):
+            awards_preference = "palme_d_or"
+        elif re.search(r'\b(sundance)\b', q):
+            awards_preference = "sundance"
+        elif re.search(r'\b(bafta)\b', q):
+            awards_preference = "bafta"
+        elif re.search(r'\b(golden globe)\b', q):
+            awards_preference = "golden_globe"
+        elif re.search(r'\b(award winner|award-winning|awards)\b', q):
+            awards_preference = "any"
+
+        complexity = None
+        if re.search(r'\b(mind-bending|mindbending|psychological|complex|complicated|intellectual|cerebral)\b', q):
+            complexity = "mind_bending"
+        elif re.search(r'\b(simple|straightforward|light|easy|popcorn)\b', q):
+            complexity = "simple"
+
+        pacing = None
+        if re.search(r'\b(slow burn|slow-burn|slowly paced|slow paced|atmospheric)\b', q):
+            pacing = "slow_burn"
+        elif re.search(r'\b(fast paced|fast-paced|fast pacing|action packed|action-packed|quick paced)\b', q):
+            pacing = "fast_paced"
+
+        family_safety = None
+        if re.search(r'\b(family|kids|children|pg|family safe|family-safe|for kids)\b', q):
+            family_safety = "family_safe"
+        elif re.search(r'\b(adult|mature|r-rated|restricted|nsfw|sex|nudity)\b', q):
+            family_safety = "mature"
+
+        violence_level = None
+        if re.search(r'\b(bloody|violent|gore|gory|brutal|bloodbath)\b', q):
+            violence_level = "high"
+        elif re.search(r'\b(non-violent|no violence|non violent|peaceful)\b', q):
+            violence_level = "low"
+
+        # Try to resolve country based on keywords
+        country = None
+        if "korean" in q or "korea" in q:
+            country = "South Korea"
+        elif "japanese" in q or "japan" in q:
+            country = "Japan"
+        elif "french" in q or "france" in q:
+            country = "France"
+        elif "spanish" in q or "spain" in q:
+            country = "Spain"
+        elif "italian" in q or "italy" in q:
+            country = "Italy"
+        elif "british" in q or "uk" in q or "united kingdom" in q:
+            country = "United Kingdom"
+
+        # Try to resolve studio based on keywords
+        studio = None
+        if "ghibli" in q:
+            studio = "Studio Ghibli"
+        elif "pixar" in q:
+            studio = "Pixar"
+        elif "marvel" in q:
+            studio = "Marvel Studios"
+        elif "a24" in q:
+            studio = "A24"
+        elif "disney" in q:
+            studio = "Disney"
+
         return RecommendationIntent(
             intent=intent,
             ranking_mode=ranking_mode,
@@ -427,5 +606,15 @@ class IntentExtractor(LLMIntentExtractor):
             year_range=year_range,
             release_year=release_year,
             exclusions=exclusions,
-            avoid_genres=avoid_genres
+            avoid_genres=avoid_genres,
+            popularity_preference=popularity_preference,
+            critical_acclaim_preference=critical_acclaim_preference,
+            novelty_preference=novelty_preference,
+            awards_preference=awards_preference,
+            complexity=complexity,
+            pacing=pacing,
+            family_safety=family_safety,
+            violence_level=violence_level,
+            country=country,
+            studio=studio
         )
