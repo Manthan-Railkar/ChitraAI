@@ -80,6 +80,7 @@ def _make_test_kb(n_rows: int = 20) -> pl.DataFrame:
         "source_dataset": ["imdb"] * n_rows,
         "poster_path": [None] * n_rows,
         "backdrop_path": [None] * n_rows,
+        "tagline": [None] * n_rows,
         "trailer_url": [None] * n_rows,
         "streaming_providers": [None] * n_rows,
         "collection_name": [None] * n_rows,

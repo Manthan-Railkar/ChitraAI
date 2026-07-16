@@ -21,19 +21,18 @@ if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
 from main import app
-from app.vector_db.qdrant import QdrantWrapper
 from app.services.embedding_service import EmbeddingService
 from app.services.search_service import SearchService
+from app.services.local_retrieval import LocalRetrievalEngine
+from app.api.deps import get_search_service
+import polars as pl
 
 
 class TestSearchEngine(unittest.TestCase):
     """Tests for SearchService and FastAPI search routes."""
 
     def setUp(self):
-        # 1. Initialize real in-memory Qdrant client
-        self.real_memory_client = QdrantClient(location=":memory:")
-        
-        # 2. Setup mock embedding service
+        # 1. Setup mock embedding service
         self.mock_embedding_service = MagicMock(spec=EmbeddingService)
         # Mock 768-dim query embedding vector
         self.mock_query_vector = np.zeros(768, dtype=np.float32)
@@ -41,16 +40,7 @@ class TestSearchEngine(unittest.TestCase):
         self.mock_embedding_service.encode_single.return_value = self.mock_query_vector
         self.mock_embedding_service.get_embedding_dimension.return_value = 768
 
-        # 3. Create test collection in-memory
-        self.wrapper = QdrantWrapper(collection_name="movies")
-        self.wrapper.client = self.real_memory_client
-        self.wrapper.create_collection(vector_size=768, distance_metric="Cosine")
-
-        # 4. Populate with test movies (with different ranking signals)
-        # Movie A: high semantic similarity (1.0), low popularity (10.0), low votes (100), low rating (5.0)
-        # Movie B: medium similarity (0.8), high rating (9.0), high popularity (200), high votes (100000)
-        # Movie C: low similarity (0.6), low rating (2.0), low popularity (0.0), low votes (0)
-        
+        # 2. Setup mock vectors
         vec_a = np.zeros(768, dtype=np.float32)
         vec_a[0] = 1.0  # cosine sim with query will be 1.0
         
@@ -62,74 +52,126 @@ class TestSearchEngine(unittest.TestCase):
         vec_c[0] = 0.6  # cosine sim with query will be 0.6
         vec_c[1] = 0.8
 
+        # 3. Create LocalRetrievalEngine with mock details
+        self.local_engine = LocalRetrievalEngine(self.mock_embedding_service)
+        self.local_engine.movies_df = pl.DataFrame([
+            {
+                "tmdb_id": 1,
+                "imdb_id": "tt01",
+                "movielens_id": 1,
+                "wiki_page": "",
+                "title": "Movie A",
+                "original_title": "Movie A",
+                "overview": "",
+                "plot_summary": None,
+                "genres": ["Action"],
+                "cast": [],
+                "directors": ["Dir A"],
+                "writers": [],
+                "runtime_minutes": 100,
+                "release_year": 2000,
+                "rating_value": 5.0,
+                "vote_count": 100,
+                "popularity": 10.0,
+                "production_companies": [],
+                "languages": ["en"],
+                "keywords": [],
+                "source_dataset": "tmdb",
+                "poster_path": None,
+                "backdrop_path": None,
+                "trailer_url": None,
+                "streaming_providers": [],
+                "collection_name": None,
+                "certification": None,
+                "tagline": None,
+                "document": ""
+            },
+            {
+                "tmdb_id": 2,
+                "imdb_id": "tt02",
+                "movielens_id": 2,
+                "wiki_page": "",
+                "title": "Movie B",
+                "original_title": "Movie B",
+                "overview": "",
+                "plot_summary": None,
+                "genres": ["Sci-Fi", "Drama"],
+                "cast": [],
+                "directors": ["Dir B"],
+                "writers": [],
+                "runtime_minutes": 120,
+                "release_year": 2005,
+                "rating_value": 9.0,
+                "vote_count": 100000,
+                "popularity": 200.0,
+                "production_companies": [],
+                "languages": ["en"],
+                "keywords": [],
+                "source_dataset": "tmdb",
+                "poster_path": None,
+                "backdrop_path": None,
+                "trailer_url": None,
+                "streaming_providers": [],
+                "collection_name": None,
+                "certification": None,
+                "tagline": None,
+                "document": ""
+            },
+            {
+                "tmdb_id": 3,
+                "imdb_id": "tt03",
+                "movielens_id": 3,
+                "wiki_page": "",
+                "title": "Movie C",
+                "original_title": "Movie C",
+                "overview": "",
+                "plot_summary": None,
+                "genres": ["Comedy"],
+                "cast": [],
+                "directors": ["Dir C"],
+                "writers": [],
+                "runtime_minutes": 90,
+                "release_year": 2010,
+                "rating_value": 2.0,
+                "vote_count": 0,
+                "popularity": 0.0,
+                "production_companies": [],
+                "languages": ["en"],
+                "keywords": [],
+                "source_dataset": "tmdb",
+                "poster_path": None,
+                "backdrop_path": None,
+                "trailer_url": None,
+                "streaming_providers": [],
+                "collection_name": None,
+                "certification": None,
+                "tagline": None,
+                "document": ""
+            }
+        ])
 
-        points = [
-            PointStruct(
-                id="00000000-0000-0000-0000-000000000001",
-                vector=vec_a.tolist(),
-                payload={
-                    "title": "Movie A",
-                    "rating_value": 5.0,
-                    "popularity": 10.0,
-                    "vote_count": 100,
-                    "genres": ["Action"],
-                    "directors": ["Dir A"]
-                }
-            ),
-            PointStruct(
-                id="00000000-0000-0000-0000-000000000002",
-                vector=vec_b.tolist(),
-                payload={
-                    "title": "Movie B",
-                    "rating_value": 9.0,
-                    "popularity": 200.0,
-                    "vote_count": 100000,
-                    "genres": ["Sci-Fi", "Drama"],
-                    "directors": ["Dir B"]
-                }
-            ),
-            PointStruct(
-                id="00000000-0000-0000-0000-000000000003",
-                vector=vec_c.tolist(),
-                payload={
-                    "title": "Movie C",
-                    "rating_value": 2.0,
-                    "popularity": 0.0,
-                    "vote_count": 0,
-                    "genres": ["Comedy"],
-                    "directors": ["Dir C"]
-                }
-            )
-        ]
-        self.real_memory_client.upsert(collection_name="movies", points=points)
+        # Convert to matrix
+        self.local_engine.embeddings_matrix = np.array([vec_a, vec_b, vec_c], dtype=np.float32)
+        norms = np.linalg.norm(self.local_engine.embeddings_matrix, axis=1, keepdims=True)
+        self.local_engine.embeddings_matrix = self.local_engine.embeddings_matrix / np.where(norms == 0, 1e-12, norms)
+        
+        self.local_engine.tmdb_id_to_idx = {
+            1: 0,
+            2: 1,
+            3: 2
+        }
 
-        # 5. Initialize SearchService under test
-        self.search_service = SearchService(self.wrapper, self.mock_embedding_service)
+        # 4. Initialize SearchService under test
+        self.search_service = SearchService(self.local_engine)
 
-    def _patch_qdrant_client(self):
-        """Patcher to force wrapper to use our real in-memory QdrantClient."""
-        return patch("app.vector_db.qdrant.QdrantClient", return_value=self.real_memory_client)
-
-    def _patch_services(self):
-        """Patcher to inject our mock services into FastAPI endpoints."""
-        return patch("app.api.routes.search.get_search_service", return_value=self.search_service)
-
-    @patch("app.services.search_service.EmbeddingService")
-    def test_search_service_reranking_math(self, mock_emb_class):
+    def test_search_service_reranking_math(self):
         """Verify the correctness of the combined hybrid reranked score calculation."""
-        # Test SearchService directly
         import asyncio
         results = asyncio.run(self.search_service.search_movies(query="test", limit=3))
         
         self.assertEqual(len(results), 3)
 
         # Verify Movie B ranks first due to strong rating, popularity, and votes weights
-        # Semantic B = 0.8, Rating B = 0.9, Pop B = min(1, log1p(200)/5) = min(1, 5.30/5.0) = 1.0, Votes B = min(1, log1p(100k)/15) = min(1, 11.51/15.0) = 0.767
-        # Score B = 0.6 * 0.8 + 0.2 * 0.9 + 0.1 * 1.0 + 0.1 * 0.767 = 0.48 + 0.18 + 0.10 + 0.0767 = 0.8367
-        
-        # Semantic A = 1.0, Rating A = 0.5, Pop A = min(1, log1p(10)/5) = 0.479, Votes A = min(1, log1p(100)/15) = 0.307
-        # Score A = 0.6 * 1.0 + 0.2 * 0.5 + 0.1 * 0.479 + 0.1 * 0.307 = 0.60 + 0.10 + 0.0479 + 0.0307 = 0.7786
-
         self.assertEqual(results[0]["title"], "Movie B")
         self.assertEqual(results[1]["title"], "Movie A")
         self.assertEqual(results[2]["title"], "Movie C")
@@ -139,45 +181,46 @@ class TestSearchEngine(unittest.TestCase):
         self.assertTrue(results[0]["reranked_score"] > results[1]["reranked_score"])
 
     def test_search_service_empty_results(self):
-        """Verify behavior when Qdrant returns no matches."""
-        # Clear collection points
-        points, _ = self.real_memory_client.scroll(collection_name="movies")
-        if points:
-            self.real_memory_client.delete(
-                collection_name="movies",
-                points_selector=[pt.id for pt in points]
-            )
-        
+        """Verify behavior when database has no matches."""
+        self.local_engine.movies_df = pl.DataFrame([], schema=self.local_engine.movies_df.schema)
         import asyncio
         results = asyncio.run(self.search_service.search_movies(query="test", limit=10))
         self.assertEqual(results, [])
 
-
     def test_search_endpoint_success(self):
         """Validate API route returns 200, matches schema, and orders correctly."""
         client = TestClient(app)
-        from app.api.deps import get_search_service
         
+        # Mock TMDbService to prevent real TMDb API requests from overwriting mock genres
+        from app.services.tmdb_service import TMDbService
+        mock_tmdb = MagicMock(spec=TMDbService)
+        mock_tmdb.api_key = None
+        mock_tmdb.cache = MagicMock()
+        mock_tmdb.cache.get_movie_details.return_value = None
+        async def mock_fetch_details(tmdb_id):
+            return None
+        mock_tmdb.fetch_movie_details = mock_fetch_details
+        
+        from app.api.deps import get_tmdb_service
         app.dependency_overrides[get_search_service] = lambda: self.search_service
+        app.dependency_overrides[get_tmdb_service] = lambda: mock_tmdb
         
-        with self._patch_qdrant_client():
-            try:
-                response = client.get("/api/v1/search?q=space%20adventure&limit=2")
-                self.assertEqual(response.status_code, 200)
-                data = response.json()
-                
-                self.assertEqual(data["query"], "space adventure")
-                self.assertEqual(data["pagination"]["limit"], 2)
-                self.assertEqual(len(data["results"]), 2)
-                
-                # Check ordering and metadata fields
-                self.assertEqual(data["results"][0]["title"], "Movie B")
-                self.assertEqual(data["results"][0]["genres"], ["Sci-Fi", "Drama"])
-                self.assertEqual(data["results"][0]["directors"], ["Dir B"])
-                self.assertEqual(data["results"][1]["title"], "Movie A")
-            finally:
-                app.dependency_overrides.clear()
-
+        try:
+            response = client.get("/api/v1/search?q=space%20adventure&limit=2")
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            
+            self.assertEqual(data["query"], "space adventure")
+            self.assertEqual(data["metadata"]["pagination"]["limit"], 2)
+            self.assertEqual(len(data["results"]), 2)
+            
+            # Check ordering and metadata fields
+            self.assertEqual(data["results"][0]["title"], "Movie B")
+            self.assertEqual(data["results"][0]["genres"], ["Sci-Fi", "Drama"])
+            self.assertEqual(data["results"][0]["directors"], ["Dir B"])
+            self.assertEqual(data["results"][1]["title"], "Movie A")
+        finally:
+            app.dependency_overrides.clear()
 
     def test_search_endpoint_validation_errors(self):
         """Verify HTTP 422 Unprocessable Entity for invalid parameters."""

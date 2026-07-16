@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Union
 from loguru import logger
 import polars as pl
-import pandas as pd
 from app.core.config import settings
 
 def detect_compression(file_path: Path) -> Optional[str]:

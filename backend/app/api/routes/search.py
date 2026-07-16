@@ -14,7 +14,7 @@ router = APIRouter()
 
 class SearchResultMovie(BaseModel):
     """Schema representing a single search result with complete metadata, scores, and trailer."""
-    id: str = Field(..., description="Unique Qdrant point UUID string")
+    id: str = Field(..., description="Unique movie ID string")
     title: str = Field(..., description="Primary movie title")
     original_title: Optional[str] = Field(None, description="Original movie title")
     overview: Optional[str] = Field(None, description="Short synopsis or overview")
@@ -31,29 +31,17 @@ class SearchResultMovie(BaseModel):
     streaming_providers: List[str] = Field(default_factory=list, description="Streaming providers in the US")
     certification: Optional[str] = Field(None, description="US age certification")
     runtime_minutes: Optional[int] = Field(None, description="Runtime in minutes")
-    semantic_score: float = Field(..., description="Raw semantic cosine similarity score from Qdrant")
+    semantic_score: float = Field(..., description="Raw semantic cosine similarity score")
     reranked_score: float = Field(..., description="Hybrid score combined with metadata weights")
-
-
-class PaginationInfo(BaseModel):
-    """Schema representing pagination metadata."""
-    page: int = Field(default=1, description="Current page number")
-    limit: int = Field(..., description="Number of results requested per page")
-    total_results: int = Field(..., description="Total number of results returned")
-
-
-class ExecutionStatistics(BaseModel):
-    """Schema representing endpoint execution statistics."""
-    elapsed_time_ms: float = Field(..., description="Elapsed execution time in milliseconds")
-    source: str = Field(..., description="Data source serving the query: 'cache', 'api', or 'database'")
 
 
 class SearchResponse(BaseModel):
     """Schema representing the complete semantic search response with statistics."""
+    success: bool = Field(..., description="Indicates request success status")
+    message: str = Field(..., description="Descriptive status message")
     query: str = Field(..., description="The original search query string")
-    pagination: PaginationInfo = Field(..., description="Pagination metadata")
-    execution_statistics: ExecutionStatistics = Field(..., description="Query execution statistics")
     results: List[SearchResultMovie] = Field(..., description="Top matching reranked movie recommendations")
+    metadata: dict = Field(..., description="Execution statistics and pagination info")
 
 
 @router.get("/search", response_model=SearchResponse, tags=["Search"])
@@ -65,7 +53,7 @@ async def search(
 ) -> SearchResponse:
     """
     Exposes semantic search endpoint. Generates query embeddings, performs nearest-neighbor vector retrieval
-    in Qdrant, reranks results based on metadata authority, enriches results in real-time using TMDb API,
+    locally, reranks results based on metadata authority, enriches results in real-time using TMDb API,
     and returns ordered recommendations with execution statistics.
     """
     logger.info(f"FastAPI search endpoint hit: q='{q}', limit={limit}")
@@ -96,17 +84,21 @@ async def search(
         elapsed_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
         
         return SearchResponse(
+            success=True,
+            message="Search results retrieved successfully.",
             query=q,
-            pagination=PaginationInfo(
-                page=1,
-                limit=limit,
-                total_results=len(formatted_results)
-            ),
-            execution_statistics=ExecutionStatistics(
-                elapsed_time_ms=elapsed_time_ms,
-                source=source
-            ),
-            results=formatted_results
+            results=formatted_results,
+            metadata={
+                "pagination": {
+                    "page": 1,
+                    "limit": limit,
+                    "total_results": len(formatted_results)
+                },
+                "execution_statistics": {
+                    "elapsed_time_ms": elapsed_time_ms,
+                    "source": source
+                }
+            }
         )
     except Exception as e:
         logger.error(f"Unexpected error in FastAPI search endpoint: {e}")

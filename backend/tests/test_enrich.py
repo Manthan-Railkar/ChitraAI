@@ -92,8 +92,8 @@ class TestTMDbEnrichment(unittest.IsolatedAsyncioTestCase):
         """Verifies that TMDb JSON response gets parsed correctly into enrichment columns."""
         parsed = extract_enrichment_data(self.mock_details_response)
         
-        self.assertEqual(parsed["poster_path"], "/poster.jpg")
-        self.assertEqual(parsed["backdrop_path"], "/backdrop.jpg")
+        self.assertEqual(parsed["poster_path"], "https://image.tmdb.org/t/p/w500/poster.jpg")
+        self.assertEqual(parsed["backdrop_path"], "https://image.tmdb.org/t/p/w1280/backdrop.jpg")
         self.assertEqual(parsed["collection_name"], "Toy Story Collection")
         self.assertEqual(parsed["trailer_url"], "https://www.youtube.com/watch?v={}".format("abc123trailer"))
         self.assertEqual(parsed["streaming_providers"], ["Disney Plus"])
@@ -165,6 +165,7 @@ class TestTMDbEnrichment(unittest.IsolatedAsyncioTestCase):
             "source_dataset": ["imdb", "imdb", "imdb"],
             "poster_path": [None, "/existing_poster.jpg", None],
             "backdrop_path": [None, None, None],
+            "tagline": [None, None, None],
             "trailer_url": [None, None, None],
             "streaming_providers": [None, None, None],
             "collection_name": [None, None, None],
@@ -189,7 +190,7 @@ class TestTMDbEnrichment(unittest.IsolatedAsyncioTestCase):
 
         # Verify Row 1: Toy Story (tmdb_id=862) enriched successfully
         ts = enriched.filter(pl.col("tmdb_id") == 862)
-        self.assertEqual(ts.select("poster_path").to_series().to_list()[0], "/poster.jpg")
+        self.assertEqual(ts.select("poster_path").to_series().to_list()[0], "https://image.tmdb.org/t/p/w500/poster.jpg")
         self.assertEqual(ts.select("overview").to_series().to_list()[0], "Enriched overview from TMDb API.")
         self.assertEqual(ts.select("runtime_minutes").to_series().to_list()[0], 81)
         self.assertEqual(ts.select("genres").to_series().to_list()[0], ["Animation", "Comedy"])

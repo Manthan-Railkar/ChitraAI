@@ -4,6 +4,7 @@ import { RouterProvider } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { router } from '@/routes';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
+import { AuthProvider } from '@/contexts/AuthContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,20 +20,22 @@ export const AppProviders: React.FC = () => {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster
-          theme="dark"
-          position="bottom-right"
-          closeButton
-          toastOptions={{
-            style: {
-              background: 'hsl(240 10% 6%)',
-              border: '1px solid hsl(240 4% 16%)',
-              color: 'hsl(0 0% 98%)',
-            },
-            className: 'font-sans',
-          }}
-        />
+        <AuthProvider>
+          <RouterProvider router={router} />
+          <Toaster
+            theme="dark"
+            position="bottom-right"
+            closeButton
+            toastOptions={{
+              style: {
+                background: 'hsl(240 10% 6%)',
+                border: '1px solid hsl(240 4% 16%)',
+                color: 'hsl(0 0% 98%)',
+              },
+              className: 'font-sans',
+            }}
+          />
+        </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

@@ -5,12 +5,14 @@ import { APP_CONFIG } from '@/config';
 interface CinematicBackgroundVideoProps {
   poster?: string;
   overlayOpacity?: number;
+  videoOpacity?: number;
   className?: string;
 }
 
 export const CinematicBackgroundVideo: React.FC<CinematicBackgroundVideoProps> = ({
   poster = APP_CONFIG.imageFallbacks.backdrop,
   overlayOpacity = 0.4,
+  videoOpacity = 0.9,
   className = '',
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -58,12 +60,11 @@ export const CinematicBackgroundVideo: React.FC<CinematicBackgroundVideoProps> =
           muted
           loop
           playsInline
-          preload="metadata"
+          preload="auto"
           onError={handleVideoError}
           onLoadedData={handleVideoLoaded}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 z-0 ${
-            isLoading ? 'opacity-0' : 'opacity-90'
-          }`}
+          style={{ opacity: isLoading ? 0 : videoOpacity }}
+          className="absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 z-0"
         />
       )}
 

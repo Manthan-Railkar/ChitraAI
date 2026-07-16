@@ -1,10 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { MainLayout } from '@/layouts/MainLayout';
 import { CinematicCanvas } from '@/components/search/CinematicCanvas';
 import { ConversationPanel } from '@/components/search/ConversationPanel';
-import { MessageSquare } from 'lucide-react';
+import { MobileSearch } from '@/components/search/MobileSearch';
+import { MessageSquare, X, Star, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
+import { useHealthCheck, useRecommendations, useMovieDetails } from '@/hooks/useMovieApi';
 
-// Import movie posters
+// Import movie posters for fallback images
 import poster1 from '@/assets/posters/poster1.png';
 import poster2 from '@/assets/posters/poster2.png';
 import poster3 from '@/assets/posters/poster3.jpg';
@@ -13,6 +17,7 @@ import poster5 from '@/assets/posters/poster5.jpg';
 import poster6 from '@/assets/posters/poster6.png';
 
 interface Movie {
+  id: string;
   title: string;
   category: string;
   img: string;
@@ -37,213 +42,134 @@ export const Search: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
-  // Mock Movie Data Sets mapped to query keywords
-  const sciFiMovies: Movie[] = [
-    {
-      title: 'Interstellar',
-      category: 'Sci-fi • Movie',
-      img: poster5,
-      rating: '8.7',
-      match: '98% Match',
-      desc: 'Matches your query for time dilation, gravity anomaly, and realistic space travel physics. A journey beyond our galaxy to save humanity.',
-      year: '2014',
-      duration: '2h 49m',
-      trailerUrl: 'https://www.youtube.com/embed/zSWdZVtXT7U',
-    },
-    {
-      title: 'Stranger Things',
-      category: 'Adventure • Series',
-      img: poster6,
-      rating: '8.7',
-      match: '92% Match',
-      desc: 'A nostalgic retro sci-fi mystery set in the 1980s dealing with government laboratories, portals, and parallel dimension exploration.',
-      year: '2016',
-      duration: '4 Seasons',
-      trailerUrl: 'https://www.youtube.com/embed/b9EkMc79ZSU',
-    },
-    {
-      title: 'Spider Man - Brand New Day',
-      category: 'Action • Movie',
-      img: poster3,
-      rating: '7.8',
-      match: '85% Match',
-      desc: 'Multiverse anomalies, high-tech suits, and fast-paced superhero physics collide in a spectacular visual adventure.',
-      year: '2021',
-      duration: '2h 28m',
-      trailerUrl: 'https://www.youtube.com/embed/t06RUxPbp_c',
-    },
-  ];
+  // API Integration States
+  const [searchQuery, setSearchQuery] = useState('');
+  const [apiError, setApiError] = useState<string | null>(null);
+  
+  // Movie Details Modal State
+  const [detailMovieId, setDetailMovieId] = useState<string | null>(null);
 
-  const nostalgicMovies: Movie[] = [
-    {
-      title: 'Stranger Things',
-      category: 'Adventure • Series',
-      img: poster6,
-      rating: '8.7',
-      match: '95% Match',
-      desc: 'Evokes 80s nostalgia, synth soundtracks, retro arcade aesthetics, and close-knit childhood friendships tackling small-town mysteries.',
-      year: '2016',
-      duration: '4 Seasons',
-      trailerUrl: 'https://www.youtube.com/embed/b9EkMc79ZSU',
-    },
-    {
-      title: 'Spider Man - Brand New Day',
-      category: 'Action • Movie',
-      img: poster3,
-      rating: '7.8',
-      match: '88% Match',
-      desc: 'A nostalgic return to youth and high-school hero tropes, paying tribute to iconic comic styling and comic book history.',
-      year: '2021',
-      duration: '2h 28m',
-      trailerUrl: 'https://www.youtube.com/embed/t06RUxPbp_c',
-    },
-    {
-      title: 'Interstellar',
-      category: 'Sci-fi • Movie',
-      img: poster5,
-      rating: '8.7',
-      match: '82% Match',
-      desc: 'A nostalgic look back at humanity as space explorers and pioneers, capturing the wonder of old-school celestial voyages.',
-      year: '2014',
-      duration: '2h 49m',
-      trailerUrl: 'https://www.youtube.com/embed/zSWdZVtXT7U',
-    },
-  ];
+  // Mobile Detection
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
-  const thrillerMovies: Movie[] = [
-    {
-      title: 'Squid Game',
-      category: 'Suspense • Series',
-      img: poster2,
-      rating: '8.0',
-      match: '97% Match',
-      desc: 'An intense, dark psychological suspense survival game forcing debt-ridden participants to play lethal childhood games for cash.',
-      year: '2021',
-      duration: '1 Season',
-      trailerUrl: 'https://www.youtube.com/embed/oqxAJKy0R4A',
-    },
-    {
-      title: 'Breaking Bad',
-      category: 'Crime • Series',
-      img: poster1,
-      rating: '9.5',
-      match: '93% Match',
-      desc: "Traces a high school chemistry teacher's slow descent into the dark underworld of methamphetamine production and cartel politics.",
-      year: '2008',
-      duration: '5 Seasons',
-      trailerUrl: 'https://www.youtube.com/embed/HhesaQXLuRY',
-    },
-    {
-      title: 'Stranger Things',
-      category: 'Adventure • Series',
-      img: poster6,
-      rating: '8.7',
-      match: '84% Match',
-      desc: 'Features dark psychological elements, government coverups, and supernatural telekinesis elements in a small Indiana town.',
-      year: '2016',
-      duration: '4 Seasons',
-      trailerUrl: 'https://www.youtube.com/embed/b9EkMc79ZSU',
-    },
-  ];
+  // 1. Health check to monitor backend connectivity
+  const { data: healthData, isError: isHealthError } = useHealthCheck({
+    refetchInterval: 30000, // Recheck every 30s
+  });
 
-  const defaultMovies: Movie[] = [
-    {
-      title: 'Breaking Bad',
-      category: 'Crime • Series',
-      img: poster1,
-      rating: '9.5',
-      match: '96% Match',
-      desc: 'Highly recommended crime masterpiece focusing on character transformation, extreme tension, and family survival elements.',
-      year: '2008',
-      duration: '5 Seasons',
-      trailerUrl: 'https://www.youtube.com/embed/HhesaQXLuRY',
-    },
-    {
-      title: 'Avengers: Endgame',
-      category: 'SuperHeroes • Movie',
-      img: poster4,
-      rating: '8.4',
-      match: '91% Match',
-      desc: 'The epic finale of the infinity saga, featuring grand scales, time travel, and heroic resolution on a cosmic level.',
-      year: '2019',
-      duration: '3h 01m',
-      trailerUrl: 'https://www.youtube.com/embed/TcMBFSGVi1c',
-    },
-    {
-      title: 'Interstellar',
-      category: 'Sci-fi • Movie',
-      img: poster5,
-      rating: '8.7',
-      match: '88% Match',
-      desc: 'A gorgeous, scientifically grounded sci-fi exploration epic capturing deep space, massive gravity wells, and parental love.',
-      year: '2014',
-      duration: '2h 49m',
-      trailerUrl: 'https://www.youtube.com/embed/zSWdZVtXT7U',
-    },
-  ];
+  const isBackendOffline = isHealthError || (healthData && healthData.status !== 'healthy');
 
-  const handleSendMessage = (text: string) => {
-    if (isProcessing) return;
-
-    setIsProcessing(true);
-    setCanvasState('processing');
-
-    const newMessages: Message[] = [...messages, { sender: 'user', text }];
-    setMessages(newMessages);
-
-    // Pick movie set based on the query text
-    const queryLower = text.toLowerCase();
-    let selectedMovies: Movie[] = [];
-    let responseIntro = '';
-
-    if (
-      queryLower.includes('sci-fi') ||
-      queryLower.includes('space') ||
-      queryLower.includes('interstellar')
-    ) {
-      selectedMovies = sciFiMovies;
-      responseIntro =
-        'Initiated semantic crawl for mind-bending sci-fi matches. I found three premium options that explore quantum physics, deep-space isolation, and cosmic time distortions.';
-    } else if (
-      queryLower.includes('nostalgic') ||
-      queryLower.includes('nostalgia') ||
-      queryLower.includes('retro') ||
-      queryLower.includes('stranger')
-    ) {
-      selectedMovies = nostalgicMovies;
-      responseIntro =
-        'Located retro-vibe matches in the vector database. These options deliver strong synth aesthetics, small-town mysteries, and nostalgic references.';
-    } else if (
-      queryLower.includes('thriller') ||
-      queryLower.includes('psychological') ||
-      queryLower.includes('dark') ||
-      queryLower.includes('squid') ||
-      queryLower.includes('crime')
-    ) {
-      selectedMovies = thrillerMovies;
-      responseIntro =
-        'Discovered high-suspense psychological thrillers that examine human behavior under pressure, morality tests, and character degradation.';
-    } else {
-      selectedMovies = defaultMovies;
-      responseIntro = `Processed semantic match for "${text}". I have mapped the closest visual vectors inside our catalog. Here are the recommendations:`;
+  // Warn user once if backend is offline
+  useEffect(() => {
+    if (isBackendOffline) {
+      toast.error('ChitraAI Backend is offline. Please start the FastAPI server on http://127.0.0.1:8000.', {
+        id: 'backend-offline-toast',
+      });
     }
+  }, [isBackendOffline]);
 
-    setRecommendations(selectedMovies);
+  // 2. Recommendations Query Hook
+  const { data: recData, error: recError, isFetching: isRecFetching } = useRecommendations(searchQuery, 3, {
+    enabled: !!searchQuery,
+  });
 
-    // After 3750ms (the time it takes for 5 processing steps * 750ms), stream the response
-    setTimeout(() => {
-      // Trigger movie results state
-      setActiveMovie(selectedMovies[0]);
+  // 3. Movie Details Query Hook
+  const { data: detailData, isFetching: isDetailFetching, error: detailError } = useMovieDetails(
+    detailMovieId || '',
+    { enabled: !!detailMovieId }
+  );
+
+  // Handle Query Loading state
+  useEffect(() => {
+    if (isRecFetching) {
+      setIsProcessing(true);
+      setCanvasState('processing');
+      setApiError(null);
+    }
+  }, [isRecFetching]);
+
+  // Handle Query Error state
+  useEffect(() => {
+    if (recError) {
+      const errMsg = recError.message || 'An error occurred while communicating with the local FastAPI server.';
+      setApiError(errMsg);
+      setIsProcessing(false);
+      setCanvasState('idle');
+      toast.error(errMsg, { id: 'search-error-toast' });
+    }
+  }, [recError]);
+
+  // Handle Query Success state and AI response text streaming
+  useEffect(() => {
+    if (recData) {
+      if (!recData.results || recData.results.length === 0) {
+        setRecommendations([]);
+        setActiveMovie(null);
+        setCanvasState('idle');
+        setIsProcessing(false);
+        setSearchQuery('');
+        toast.info('No semantic matches found. Try describing your vibe in different terms.', { id: 'no-matches-toast' });
+        return;
+      }
+
+      // Map backend movies to frontend structure
+      const mappedMovies: Movie[] = recData.results.map((m, idx) => {
+        // Pick a fallback poster if TMDB poster is missing
+        const fallbackPosters = [poster1, poster2, poster3, poster4, poster5, poster6];
+        const localFallback = fallbackPosters[idx % fallbackPosters.length];
+        
+        return {
+          id: m.id,
+          title: m.title,
+          category: m.genres && m.genres.length > 0 ? m.genres.slice(0, 2).join(' • ') : 'Movie',
+          img: m.poster_path
+            ? (m.poster_path.startsWith('http')
+              ? m.poster_path
+              : `https://image.tmdb.org/t/p/w500${m.poster_path}`)
+            : localFallback,
+          rating: m.rating_value ? String(m.rating_value) : '7.8',
+          match: m.reranked_score ? `${Math.round(m.reranked_score * 100)}% Match` : '92% Match',
+          desc: m.recommendation_reason || m.overview || 'Highly matching title from our semantic index.',
+          year: m.release_year ? String(m.release_year) : '2021',
+          duration: m.runtime_minutes ? `${m.runtime_minutes}m` : '2h',
+          trailerUrl: m.trailer_url ? m.trailer_url.replace('watch?v=', 'embed/') : undefined,
+        };
+      });
+
+      setRecommendations(mappedMovies);
+      setActiveMovie(mappedMovies[0]);
       setCanvasState('results');
 
-      // Start streaming AI response text
+      // Build personalized AI response dynamically from parsed query understanding
+      const themes = recData.understanding?.themes || [];
+      const genres = recData.understanding?.genres || [];
+      let responseIntro = 'Processed semantic match for your request. ';
+      
+      if (themes.length > 0 || genres.length > 0) {
+        const themePart = themes.length > 0 ? `themes like "${themes.slice(0, 3).join(', ')}"` : '';
+        const genrePart = genres.length > 0 ? `genres like "${genres.slice(0, 2).join(', ')}"` : '';
+        const parts = [themePart, genrePart].filter(Boolean).join(' and ');
+        responseIntro = `Initiated semantic crawl for ${parts}. I found these premium options in our vector database:`;
+      } else {
+        responseIntro = `I found these movie recommendations matching the emotional vibe of your request:`;
+      }
+
+      // Stream response character by character
       const streamingMsg: Message = { sender: 'ai', text: '', isStreaming: true };
-      setMessages([...newMessages, streamingMsg]);
+      setMessages((prev) => [...prev, streamingMsg]);
 
       let charIndex = 0;
       const interval = setInterval(() => {
-        charIndex += 3; // stream 3 characters per tick for fluid motion
+        charIndex += 3;
         if (charIndex >= responseIntro.length) {
           clearInterval(interval);
           setMessages((prev) => {
@@ -256,6 +182,7 @@ export const Search: React.FC = () => {
             return updated;
           });
           setIsProcessing(false);
+          setSearchQuery(''); // Reset query state
         } else {
           setMessages((prev) => {
             const updated = [...prev];
@@ -266,8 +193,21 @@ export const Search: React.FC = () => {
             return updated;
           });
         }
-      }, 25);
-    }, 3750);
+      }, 20);
+    }
+  }, [recData]);
+
+  const handleSendMessage = (text: string) => {
+    if (isProcessing) return;
+
+    if (isBackendOffline) {
+      toast.error('Cannot submit query. The local FastAPI server is offline.', { id: 'backend-offline-submit' });
+      return;
+    }
+
+    setApiError(null);
+    setMessages((prev) => [...prev, { sender: 'user', text }]);
+    setSearchQuery(text);
   };
 
   const handleClearChat = () => {
@@ -275,58 +215,271 @@ export const Search: React.FC = () => {
     setCanvasState('idle');
     setActiveMovie(null);
     setRecommendations([]);
+    setSearchQuery('');
+    setApiError(null);
+  };
+
+  const handleRetry = () => {
+    const userMessages = messages.filter((m) => m.sender === 'user');
+    if (userMessages.length > 0) {
+      const lastText = userMessages[userMessages.length - 1].text;
+      setApiError(null);
+      setSearchQuery(lastText);
+    }
   };
 
   return (
     <MainLayout>
-      <div className="relative w-full h-[calc(100vh-112px)] flex flex-col lg:flex-row overflow-hidden bg-black select-none">
-        {/* Left Side: Cinematic Canvas (70% width or 100% width when collapsed) */}
-        <div
-          className={`h-full relative overflow-hidden flex flex-col transition-all duration-500 ease-in-out ${
-            isChatCollapsed ? 'w-full lg:w-full' : 'w-full lg:w-[70%]'
-          }`}
-        >
-          <CinematicCanvas
-            canvasState={canvasState}
-            activeMovie={activeMovie}
-            recommendations={recommendations}
-            onSelectMovie={setActiveMovie}
-          />
-
-          {/* Floating Workspace Restore Button (visible when collapsed) */}
-          {isChatCollapsed && (
-            <button
-              onClick={() => setIsChatCollapsed(false)}
-              className="absolute top-6 right-6 z-40 p-3 rounded-full border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-white transition-all duration-300 cursor-pointer shadow-lg shadow-rose-500/10 flex items-center gap-2 hover:scale-105"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span
-                className="text-[10px] font-bold uppercase tracking-widest"
-                style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}
-              >
-                Open Workspace
-              </span>
-            </button>
-          )}
-        </div>
-
-        {/* Right Side: AI Conversation Panel (30% width or 0% width when collapsed) */}
-        <div
-          className={`h-[350px] lg:h-full shrink-0 transition-all duration-500 ease-in-out overflow-hidden ${
-            isChatCollapsed
-              ? 'w-0 lg:w-0 opacity-0 pointer-events-none'
-              : 'w-full lg:w-[30%] opacity-100'
-          }`}
-        >
-          <ConversationPanel
+      {isMobile ? (
+        createPortal(
+          <MobileSearch
             messages={messages}
             onSendMessage={handleSendMessage}
             isProcessing={isProcessing}
             onClearChat={handleClearChat}
-            onToggleCollapse={() => setIsChatCollapsed(true)}
-          />
+            canvasState={canvasState}
+            activeMovie={activeMovie}
+            recommendations={recommendations}
+            onSelectMovie={setActiveMovie}
+            onShowDetails={(movie) => setDetailMovieId(movie.id)}
+            hasError={!!apiError}
+            errorMessage={apiError}
+            onRetry={handleRetry}
+          />,
+          document.body
+        )
+      ) : (
+        <div className="relative w-full h-[calc(100vh-112px)] flex flex-col lg:flex-row overflow-hidden bg-black select-none">
+          {/* Left Side: Cinematic Canvas (70% width or 100% width when collapsed) */}
+          <div
+            className={`h-full relative overflow-hidden flex flex-col transition-all duration-500 ease-in-out ${
+              isChatCollapsed ? 'w-full lg:w-full' : 'w-full lg:w-[70%]'
+            }`}
+          >
+            <CinematicCanvas
+              canvasState={canvasState}
+              activeMovie={activeMovie}
+              recommendations={recommendations}
+              onSelectMovie={setActiveMovie}
+              onShowDetails={(movie) => setDetailMovieId(movie.id)}
+              hasError={!!apiError}
+              errorMessage={apiError}
+              onRetry={handleRetry}
+            />
+
+            {/* Floating Workspace Restore Button (visible when collapsed) */}
+            {isChatCollapsed && (
+              <button
+                onClick={() => setIsChatCollapsed(false)}
+                className="absolute top-6 right-6 z-40 p-3 rounded-full border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-white transition-all duration-300 cursor-pointer shadow-lg shadow-rose-500/10 flex items-center gap-2 hover:scale-105"
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span
+                  className="text-[10px] font-bold uppercase tracking-widest"
+                  style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}
+                >
+                  Open Workspace
+                </span>
+              </button>
+            )}
+          </div>
+
+          {/* Right Side: AI Conversation Panel (30% width or 0% width when collapsed) */}
+          <div
+            className={`h-[350px] lg:h-full shrink-0 transition-all duration-500 ease-in-out overflow-hidden ${
+              isChatCollapsed
+                ? 'w-0 lg:w-0 opacity-0 pointer-events-none'
+                : 'w-full lg:w-[30%] opacity-100'
+            }`}
+          >
+            <ConversationPanel
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              isProcessing={isProcessing}
+              onClearChat={handleClearChat}
+              onToggleCollapse={() => setIsChatCollapsed(true)}
+            />
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Movie Details Modal */}
+      {detailMovieId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-[650px] rounded-3xl border border-white/[0.08] bg-zinc-950/95 backdrop-blur-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            
+            {/* Backdrop Area */}
+            <div className="relative h-[200px] sm:h-[240px] w-full shrink-0 overflow-hidden">
+              {isDetailFetching ? (
+                <div className="w-full h-full bg-zinc-900 animate-pulse flex items-center justify-center text-white/20">
+                  Loading Backdrop...
+                </div>
+              ) : detailData?.backdrop_path ? (
+                <>
+                  <img
+                    src={`https://image.tmdb.org/t/p/w780${detailData.backdrop_path}`}
+                    alt="Backdrop"
+                    className="w-full h-full object-cover opacity-45 scale-105 blur-[2px]"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/60 to-transparent" />
+                </>
+              ) : (
+                <div className="w-full h-full bg-gradient-to-t from-zinc-950 to-zinc-900/50" />
+              )}
+              
+              {/* Close Button */}
+              <button
+                onClick={() => setDetailMovieId(null)}
+                className="absolute top-4 right-4 z-50 p-2 rounded-full bg-black/60 border border-white/10 hover:border-white/20 text-white/70 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content Area */}
+            <div className="p-6 sm:p-8 overflow-y-auto flex-grow custom-scrollbar flex flex-col gap-6 -mt-20 relative z-10">
+              {isDetailFetching ? (
+                <div className="flex flex-col gap-4 py-12 items-center justify-center">
+                  <div className="w-8 h-8 rounded-full border border-rose-500/50 border-t-transparent animate-spin" />
+                  <span className="text-xs text-white/50 font-medium">Fetching details from TMDb...</span>
+                </div>
+              ) : detailError ? (
+                <div className="flex flex-col gap-3 py-12 items-center justify-center text-center">
+                  <AlertTriangle className="w-8 h-8 text-rose-500" />
+                  <span className="text-xs text-white/60 font-medium">Failed to load movie details.</span>
+                  <button
+                    onClick={() => setDetailMovieId(null)}
+                    className="mt-2 px-4 py-1.5 bg-white/10 text-white rounded-full text-xs font-bold"
+                  >
+                    Close Modal
+                  </button>
+                </div>
+              ) : detailData ? (
+                <div className="flex flex-col gap-6 text-white">
+                  
+                  {/* Title and Poster Card */}
+                  <div className="flex flex-col sm:flex-row gap-5 items-start">
+                    <div className="w-[100px] aspect-[2/3] rounded-xl overflow-hidden shadow-lg border border-white/10 shrink-0 bg-zinc-900">
+                      <img
+                        src={
+                          detailData.poster_path
+                            ? `https://image.tmdb.org/t/p/w300${detailData.poster_path}`
+                            : poster1
+                        }
+                        alt={detailData.title}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-grow flex flex-col gap-2 pt-2">
+                      <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-none">
+                        {detailData.title}
+                      </h3>
+                      {detailData.original_title && detailData.original_title !== detailData.title && (
+                        <p className="text-xs text-white/40 font-semibold uppercase tracking-wider -mt-1">
+                          Original: {detailData.original_title}
+                        </p>
+                      )}
+                      
+                      {/* Genres, Duration, Year */}
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-white/50 font-medium pt-1">
+                        {detailData.genres && detailData.genres.length > 0 && (
+                          <span className="text-rose-400 font-bold uppercase tracking-wider">
+                            {detailData.genres.join(' • ')}
+                          </span>
+                        )}
+                        <span>{detailData.release_year}</span>
+                        {detailData.runtime_minutes && <span>{detailData.runtime_minutes}m</span>}
+                      </div>
+
+                      {/* Ratings and Popularity */}
+                      <div className="flex items-center gap-4 text-xs font-bold text-white/70 mt-1">
+                        {detailData.rating_value && (
+                          <div className="flex items-center gap-1 text-amber-400">
+                            <Star className="w-3.5 h-3.5 fill-current" />
+                            <span>{detailData.rating_value.toFixed(1)} / 10</span>
+                          </div>
+                        )}
+                        {detailData.popularity && (
+                          <span className="text-white/40 font-semibold uppercase tracking-widest text-[9px]">
+                            Popularity: {Math.round(detailData.popularity)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Overview */}
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-rose-500/80">
+                      Overview
+                    </span>
+                    <p className="text-xs text-white/60 leading-relaxed font-medium">
+                      {detailData.overview || 'No synopsis available.'}
+                    </p>
+                  </div>
+
+                  {/* Cast and Directors */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {detailData.directors && detailData.directors.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-rose-500/80">
+                          Director
+                        </span>
+                        <span className="text-xs text-white/80 font-bold">
+                          {detailData.directors.join(', ')}
+                        </span>
+                      </div>
+                    )}
+                    {detailData.cast && detailData.cast.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-rose-500/80">
+                          Top Cast
+                        </span>
+                        <span className="text-xs text-white/80 font-semibold leading-relaxed">
+                          {detailData.cast.slice(0, 5).join(', ')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Streaming Providers */}
+                  {detailData.streaming_providers && detailData.streaming_providers.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-rose-500/80">
+                        Where to Stream (US)
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {detailData.streaming_providers.map((provider: string, idx: number) => (
+                          <span
+                            key={idx}
+                            className="text-[9px] font-bold text-white/80 border border-white/10 bg-white/[0.03] px-2.5 py-1 rounded-full uppercase tracking-wider"
+                          >
+                            {provider}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Certification */}
+                  {detailData.certification && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-rose-500/80">
+                        Content Rating
+                      </span>
+                      <span className="text-xs text-white/80 font-bold uppercase">
+                        {detailData.certification}
+                      </span>
+                    </div>
+                  )}
+
+                </div>
+              ) : null}
+            </div>
+
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

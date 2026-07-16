@@ -46,6 +46,7 @@ def _make_test_df(overrides: dict | None = None, n_rows: int = 5) -> pl.DataFram
         "streaming_providers": [["Netflix"]] * n_rows,
         "collection_name": [None] * n_rows,
         "certification": ["PG-13"] * n_rows,
+        "tagline": ["Tagline text"] * n_rows,
         "document": [f"Title: Movie {i} (200{i})\nGenres: Drama, Thriller" for i in range(n_rows)],
     }
     if overrides:

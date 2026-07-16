@@ -32,6 +32,7 @@ CANONICAL_COLUMNS = [
     "streaming_providers",
     "collection_name",
     "certification",
+    "tagline",
     "document"
 ]
 
@@ -63,6 +64,7 @@ CANONICAL_SCHEMA = {
     "streaming_providers": pl.List(pl.String),
     "collection_name": pl.String,
     "certification": pl.String,
+    "tagline": pl.String,
     "document": pl.String
 }
 
@@ -215,7 +217,8 @@ class TMDbAdapter(BaseMovieAdapter):
             pl.col("popularity"),
             pl.col("production_companies"),
             languages_expr.alias("languages"),
-            pl.col("keywords") if "keywords" in lf_cols else pl.lit(None).alias("keywords")
+            pl.col("keywords") if "keywords" in lf_cols else pl.lit(None).alias("keywords"),
+            pl.col("tagline") if "tagline" in lf_cols else pl.lit(None).alias("tagline")
         ])
 
         return self.enforce_canonical_schema(mapped_lf, "tmdb")

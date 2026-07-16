@@ -10,7 +10,6 @@ const Search = React.lazy(() => import('@/pages/Search'));
 const Recommendations = React.lazy(() => import('@/pages/Recommendations'));
 const Favorites = React.lazy(() => import('@/pages/Favorites'));
 const Profile = React.lazy(() => import('@/pages/Profile'));
-const Dashboard = React.lazy(() => import('@/pages/Dashboard'));
 const MovieDetails = React.lazy(() => import('@/pages/MovieDetails'));
 const NotFound = React.lazy(() => import('@/pages/NotFound'));
 
@@ -43,14 +42,6 @@ export const router = createBrowserRouter([
         element: withSuspense(Favorites),
       },
       {
-        path: 'profile',
-        element: withSuspense(Profile),
-      },
-      {
-        path: 'dashboard',
-        element: withSuspense(Dashboard),
-      },
-      {
         path: 'movie/:id',
         element: withSuspense(MovieDetails),
       },
@@ -59,6 +50,10 @@ export const router = createBrowserRouter([
         element: withSuspense(NotFound),
       },
     ],
+  },
+  {
+    path: '/profile',
+    element: withSuspense(Profile),
   },
 ]);
 

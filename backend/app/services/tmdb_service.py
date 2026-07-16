@@ -19,9 +19,24 @@ class TMDbService:
         self.cache = cache_manager or TMDbCacheManager()
         
         # Concurrency controller to prevent overloading the system or API limits
-        self.semaphore = asyncio.Semaphore(10)
+        self.semaphore = asyncio.Semaphore(settings.TMDB_SEMAPHORE_LIMIT)
+        self._client: Optional[httpx.AsyncClient] = None
         
         logger.info(f"TMDbService initialized. API Key Configured: {bool(self.api_key)}")
+
+    def get_client(self) -> httpx.AsyncClient:
+        """Retrieves or initializes a persistent AsyncClient."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(settings.TIMEOUT_SECONDS, connect=settings.TIMEOUT_SECONDS)
+            )
+        return self._client
+
+    async def close(self) -> None:
+        """Closes the persistent AsyncClient connection pool."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            logger.info("TMDbService persistent HTTP client closed.")
 
     def _get_headers_and_params(self) -> tuple[Dict[str, str], Dict[str, str]]:
         """Resolves headers and parameters depending on Bearer Token vs API key."""
@@ -37,7 +52,7 @@ class TMDbService:
         return headers, params
 
     async def _make_request(
-        self, client: httpx.AsyncClient, endpoint: str, extra_params: Optional[Dict[str, Any]] = None, max_retries: int = 5
+        self, client: httpx.AsyncClient, endpoint: str, extra_params: Optional[Dict[str, Any]] = None, max_retries: Optional[int] = None
     ) -> Optional[Dict[str, Any]]:
         """Makes an asynchronous request to the TMDb API with exponential backoff and rate-limit handling."""
         url = f"{self.BASE_URL}/{endpoint.lstrip('/')}"
@@ -45,18 +60,20 @@ class TMDbService:
         if extra_params:
             params.update(extra_params)
 
-        for attempt in range(1, max_retries + 1):
+        retries_limit = max_retries if max_retries is not None else settings.MAX_RETRIES
+
+        for attempt in range(1, retries_limit + 1):
             async with self.semaphore:
                 try:
-                    response = await client.get(url, headers=headers, params=params, timeout=15.0)
+                    response = await client.get(url, headers=headers, params=params)
                     
                     # 429 Too Many Requests
                     if response.status_code == 429:
                         retry_after = response.headers.get("Retry-After")
-                        sleep_seconds = float(retry_after) if retry_after else (2 ** attempt)
+                        sleep_seconds = float(retry_after) if retry_after else (0.5 * attempt)
                         logger.warning(
                             f"[TMDb API] Rate limit hit (429) on {endpoint}. "
-                            f"Sleeping for {sleep_seconds:.1f}s (Attempt {attempt}/{max_retries})."
+                            f"Sleeping for {sleep_seconds:.1f}s (Attempt {attempt}/{retries_limit})."
                         )
                         await asyncio.sleep(sleep_seconds)
                         continue
@@ -76,27 +93,26 @@ class TMDbService:
                             "Please check that your TMDB_API_KEY is valid."
                         )
                         return None
-
                         
                     logger.warning(
                         f"[TMDb API] HTTP error {e.response.status_code} on {endpoint}. "
-                        f"Attempt {attempt}/{max_retries}. Retry in {2 ** attempt}s."
+                        f"Attempt {attempt}/{retries_limit}. Retry in {0.5 * attempt}s."
                     )
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(0.5 * attempt)
                     
                 except (httpx.RequestError, asyncio.TimeoutError) as e:
                     logger.warning(
                         f"[TMDb API] Request failed: {e} on {endpoint}. "
-                        f"Attempt {attempt}/{max_retries}. Retry in {2 ** attempt}s."
+                        f"Attempt {attempt}/{retries_limit}. Retry in {0.5 * attempt}s."
                     )
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(0.5 * attempt)
                     
-        logger.error(f"[TMDb API] Max retries reached ({max_retries}) for {endpoint}.")
+        logger.error(f"[TMDb API] Max retries reached ({retries_limit}) for {endpoint}.")
         return None
 
     async def fetch_movie_details(self, tmdb_id: int) -> Optional[Dict[str, Any]]:
         """
-        Retrieves full movie details (videos, watch/providers, release_dates, keywords)
+        Retrieves full movie details (videos, watch/providers, release_dates, keywords, credits)
         from cache or the TMDb API.
         """
         # 1. Check local cache
@@ -112,11 +128,11 @@ class TMDbService:
         # 2. Fetch from API
         endpoint = f"movie/{tmdb_id}"
         extra_params = {
-            "append_to_response": "videos,watch/providers,release_dates,keywords"
+            "append_to_response": "videos,watch/providers,release_dates,keywords,credits"
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await self._make_request(client, endpoint, extra_params)
+        client = self.get_client()
+        response = await self._make_request(client, endpoint, extra_params)
             
         if response:
             # 3. Store in local cache
@@ -143,8 +159,8 @@ class TMDbService:
         endpoint = f"find/{imdb_id}"
         extra_params = {"external_source": "imdb_id"}
         
-        async with httpx.AsyncClient() as client:
-            response = await self._make_request(client, endpoint, extra_params)
+        client = self.get_client()
+        response = await self._make_request(client, endpoint, extra_params)
             
         tmdb_id = None
         if response:
@@ -156,3 +172,26 @@ class TMDbService:
         self.cache.save_imdb_mapping(imdb_id, tmdb_id or 0)
         
         return tmdb_id
+
+    async def search_movie_by_title(self, title: str, year: Optional[int] = None) -> Optional[int]:
+        """
+        Searches TMDb for a movie by its title (and optional release year)
+        and returns the first matching TMDb ID.
+        """
+        if not self.api_key:
+            logger.warning("[TMDb API] No API Key set. Skipping movie search.")
+            return None
+
+        endpoint = "search/movie"
+        extra_params = {"query": title}
+        if year:
+            extra_params["primary_release_year"] = year
+
+        client = self.get_client()
+        response = await self._make_request(client, endpoint, extra_params)
+
+        if response:
+            results = response.get("results", [])
+            if results:
+                return results[0].get("id")
+        return None

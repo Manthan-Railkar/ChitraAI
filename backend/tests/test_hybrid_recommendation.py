@@ -22,117 +22,187 @@ if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
 from main import app
-from app.vector_db.qdrant import QdrantWrapper
 from app.services.embedding_service import EmbeddingService
 from app.services.recommendation_service import RecommendationService
-from app.services.gemini_service import QueryUnderstandingResult, YearConstraints
-from app.api.deps import get_recommendation_service, get_gemini_service
+from app.services.local_retrieval import LocalRetrievalEngine
+from app.services.intent_extractor import IntentExtractor, RecommendationIntent
+from app.api.routes.query import QueryUnderstandingResult, YearConstraints
+from app.api.deps import get_recommendation_service
+import polars as pl
 
 
 class TestHybridRecommendation(unittest.TestCase):
     """Tests for RecommendationService and FastAPI recommendations route."""
 
     def setUp(self):
-        # 1. Initialize real in-memory Qdrant client
-        self.real_memory_client = QdrantClient(location=":memory:")
-
-        # 2. Setup mock embedding service
+        # 1. Setup mock embedding service
         self.mock_embedding_service = MagicMock(spec=EmbeddingService)
         # Mock 768-dim query embedding vector
         self.mock_query_vector = np.zeros(768, dtype=np.float32)
         self.mock_query_vector[0] = 1.0  # simple indicator vector
         self.mock_embedding_service.encode_single.return_value = self.mock_query_vector
 
-        # 3. Create test collection in-memory
-        self.wrapper = QdrantWrapper(collection_name="movies")
-        self.wrapper.client = self.real_memory_client
-        self.wrapper.create_collection(vector_size=768, distance_metric="Cosine")
-
-        # 4. Populate with test movies (with different vectors and attributes)
-        # We construct normalized vectors to yield exact base cosine similarities:
-        # Alien: sim = 0.9
-        # The Matrix: sim = 0.8
-        # Toy Story: sim = 0.7
-        # The Dark Knight Rises: sim = 0.6
-        
+        # 2. Setup mock vectors
         vec_alien = np.zeros(768, dtype=np.float32)
         vec_alien[0] = 0.9
-        vec_alien[1] = 0.43589  # magnitude = sqrt(0.81 + 0.19) = 1.0
+        vec_alien[1] = 0.43589
         
         vec_matrix = np.zeros(768, dtype=np.float32)
         vec_matrix[0] = 0.8
-        vec_matrix[1] = 0.6  # magnitude = 1.0
+        vec_matrix[1] = 0.6
         
         vec_toy_story = np.zeros(768, dtype=np.float32)
         vec_toy_story[0] = 0.7
-        vec_toy_story[1] = 0.71414  # magnitude = 1.0
+        vec_toy_story[1] = 0.71414
         
         vec_tdkr = np.zeros(768, dtype=np.float32)
         vec_tdkr[0] = 0.6
-        vec_tdkr[1] = 0.8  # magnitude = 1.0
+        vec_tdkr[1] = 0.8
 
-        points = [
-            PointStruct(
-                id="00000000-0000-0000-0000-000000000001",
-                vector=vec_matrix.tolist(),
-                payload={
-                    "title": "The Matrix",
-                    "genres": ["Action", "Sci-Fi"],
-                    "cast": ["Keanu Reeves", "Laurence Fishburne"],
-                    "directors": ["Lana Wachowski", "Lilly Wachowski"],
-                    "release_year": 1999,
-                    "rating_value": 8.7,
-                    "popularity": 80.0,
-                    "vote_count": 22000
-                }
-            ),
-            PointStruct(
-                id="00000000-0000-0000-0000-000000000002",
-                vector=vec_toy_story.tolist(),
-                payload={
-                    "title": "Toy Story",
-                    "genres": ["Animation", "Comedy"],
-                    "cast": ["Tom Hanks", "Tim Allen"],
-                    "directors": ["John Lasseter"],
-                    "release_year": 1995,
-                    "rating_value": 8.3,
-                    "popularity": 60.0,
-                    "vote_count": 15000
-                }
-            ),
-            PointStruct(
-                id="00000000-0000-0000-0000-000000000003",
-                vector=vec_tdkr.tolist(),
-                payload={
-                    "title": "The Dark Knight Rises",
-                    "genres": ["Action", "Thriller"],
-                    "cast": ["Christian Bale", "Gary Oldman"],
-                    "directors": ["Christopher Nolan"],
-                    "release_year": 2012,
-                    "rating_value": 8.4,
-                    "popularity": 90.0,
-                    "vote_count": 25000
-                }
-            ),
-            PointStruct(
-                id="00000000-0000-0000-0000-000000000004",
-                vector=vec_alien.tolist(),
-                payload={
-                    "title": "Alien",
-                    "genres": ["Horror", "Sci-Fi"],
-                    "cast": ["Sigourney Weaver", "Tom Skerritt"],
-                    "directors": ["Ridley Scott"],
-                    "release_year": 1979,
-                    "rating_value": 8.5,
-                    "popularity": 45.0,
-                    "vote_count": 9000
-                }
-            )
-        ]
-        self.real_memory_client.upsert(collection_name="movies", points=points)
+        # 3. Create LocalRetrievalEngine with mock details
+        self.local_engine = LocalRetrievalEngine(self.mock_embedding_service)
+        self.local_engine.movies_df = pl.DataFrame([
+            {
+                "tmdb_id": 1,
+                "imdb_id": "tt0133093",
+                "movielens_id": 1,
+                "wiki_page": "https://en.wikipedia.org/wiki/The_Matrix",
+                "title": "The Matrix",
+                "original_title": "The Matrix",
+                "overview": "A computer hacker learns from mysterious rebels about the true nature of his reality.",
+                "plot_summary": None,
+                "genres": ["Action", "Sci-Fi"],
+                "cast": ["Keanu Reeves", "Laurence Fishburne"],
+                "directors": ["Lana Wachowski", "Lilly Wachowski"],
+                "writers": ["Lana Wachowski", "Lilly Wachowski"],
+                "runtime_minutes": 136,
+                "release_year": 1999,
+                "rating_value": 8.7,
+                "vote_count": 22000,
+                "popularity": 80.0,
+                "production_companies": [],
+                "languages": ["en"],
+                "keywords": [],
+                "source_dataset": "tmdb",
+                "poster_path": "/matrix.jpg",
+                "backdrop_path": None,
+                "trailer_url": None,
+                "streaming_providers": [],
+                "collection_name": None,
+                "certification": None,
+                "tagline": "Welcome to the Real World",
+                "document": ""
+            },
+            {
+                "tmdb_id": 2,
+                "imdb_id": "tt0114709",
+                "movielens_id": 2,
+                "wiki_page": "https://en.wikipedia.org/wiki/Toy_Story",
+                "title": "Toy Story",
+                "original_title": "Toy Story",
+                "overview": "A cowboy doll is profoundly threatened and jealous when a new spaceman figure supplants him as top toy in a boy's room.",
+                "plot_summary": None,
+                "genres": ["Animation", "Comedy"],
+                "cast": ["Tom Hanks", "Tim Allen"],
+                "directors": ["John Lasseter"],
+                "writers": [],
+                "runtime_minutes": 81,
+                "release_year": 1995,
+                "rating_value": 8.3,
+                "vote_count": 15000,
+                "popularity": 60.0,
+                "production_companies": [],
+                "languages": ["en"],
+                "keywords": [],
+                "source_dataset": "tmdb",
+                "poster_path": "/toystory.jpg",
+                "backdrop_path": None,
+                "trailer_url": None,
+                "streaming_providers": [],
+                "collection_name": None,
+                "certification": None,
+                "tagline": "The toys are back in town",
+                "document": ""
+            },
+            {
+                "tmdb_id": 3,
+                "imdb_id": "tt1345836",
+                "movielens_id": 3,
+                "wiki_page": "https://en.wikipedia.org/wiki/The_Dark_Knight_Rises",
+                "title": "The Dark Knight Rises",
+                "original_title": "The Dark Knight Rises",
+                "overview": "Eight years after the Joker's reign of anarchy, Batman, with the help of the enigmatic Catwoman, is forced from his exile to save Gotham City from the brutal guerrilla terrorist Bane.",
+                "plot_summary": None,
+                "genres": ["Action", "Thriller"],
+                "cast": ["Christian Bale", "Gary Oldman"],
+                "directors": ["Christopher Nolan"],
+                "writers": [],
+                "runtime_minutes": 165,
+                "release_year": 2012,
+                "rating_value": 8.4,
+                "vote_count": 25000,
+                "popularity": 90.0,
+                "production_companies": [],
+                "languages": ["en"],
+                "keywords": [],
+                "source_dataset": "tmdb",
+                "poster_path": "/tdkr.jpg",
+                "backdrop_path": None,
+                "trailer_url": None,
+                "streaming_providers": [],
+                "collection_name": None,
+                "certification": None,
+                "tagline": "A Legend Ends",
+                "document": ""
+            },
+            {
+                "tmdb_id": 4,
+                "imdb_id": "tt0078748",
+                "movielens_id": 4,
+                "wiki_page": "https://en.wikipedia.org/wiki/Alien_(film)",
+                "title": "Alien",
+                "original_title": "Alien",
+                "overview": "After a space merchant vessel receives an unknown transmission as a distress call, one of the crew is attacked by a mysterious lifeform and its journey to Earth is interrupted.",
+                "plot_summary": None,
+                "genres": ["Horror", "Sci-Fi"],
+                "cast": ["Sigourney Weaver", "Tom Skerritt"],
+                "directors": ["Ridley Scott"],
+                "writers": [],
+                "runtime_minutes": 117,
+                "release_year": 1979,
+                "rating_value": 8.5,
+                "vote_count": 9000,
+                "popularity": 45.0,
+                "production_companies": [],
+                "languages": ["en"],
+                "keywords": [],
+                "source_dataset": "tmdb",
+                "poster_path": "/alien.jpg",
+                "backdrop_path": None,
+                "trailer_url": None,
+                "streaming_providers": [],
+                "collection_name": None,
+                "certification": None,
+                "tagline": "In space no one can hear you scream",
+                "document": ""
+            }
+        ])
 
-        # 5. Initialize RecommendationService under test
-        self.recommend_service = RecommendationService(self.wrapper, self.mock_embedding_service)
+        # Convert to matrix
+        self.local_engine.embeddings_matrix = np.array([vec_matrix, vec_toy_story, vec_tdkr, vec_alien], dtype=np.float32)
+        norms = np.linalg.norm(self.local_engine.embeddings_matrix, axis=1, keepdims=True)
+        self.local_engine.embeddings_matrix = self.local_engine.embeddings_matrix / np.where(norms == 0, 1e-12, norms)
+        
+        self.local_engine.tmdb_id_to_idx = {
+            1: 0,
+            2: 1,
+            3: 2,
+            4: 3
+        }
+
+        # 4. Initialize RecommendationService under test
+        self.mock_intent_extractor = MagicMock(spec=IntentExtractor)
+        self.recommend_service = RecommendationService(self.local_engine, self.mock_intent_extractor)
 
     def test_query_builder_document(self):
         """Verify structured JSON maps correctly to a text search document."""
@@ -234,44 +304,39 @@ class TestHybridRecommendation(unittest.TestCase):
         """Validate API route returns 200, matches schema, and applies filters end-to-end."""
         client = TestClient(app)
         
-        # Mock Gemini Query Understanding to return a predefined result
-        mock_understanding = QueryUnderstandingResult(
-            search_intent="search",
-            excluded_genres=["Comedy"],
-            release_year_constraints=YearConstraints(start_year=1990)
+        # Setup mock intent extractor to return the expected intent for the query
+        from app.services.intent_extractor import YearRange
+        self.mock_intent_extractor.extract_intent = AsyncMock(
+            return_value=RecommendationIntent(
+                avoid_genres=["Comedy"],
+                year_range=YearRange(start=1990)
+            )
         )
         
-        # Patch QdrantClient to use our real in-memory database
-        with patch("app.vector_db.qdrant.QdrantClient", return_value=self.real_memory_client):
-            # Patch get_gemini_service to return mock understanding
-            mock_gemini = MagicMock()
-            mock_gemini.understand_query = AsyncMock(return_value=mock_understanding)
+        # Patch get_recommendation_service to use our service
+        app.dependency_overrides[get_recommendation_service] = lambda: self.recommend_service
+        
+        try:
+            response = client.get("/api/v1/recommendations/semantic?q=non-comedy%20movies%20after%201990&limit=3")
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
             
-            # Patch get_recommendation_service to use our service
-            app.dependency_overrides[get_recommendation_service] = lambda: self.recommend_service
-            app.dependency_overrides[get_gemini_service] = lambda: mock_gemini
+            self.assertEqual(data["query"], "non-comedy movies after 1990")
+            self.assertEqual(data["metadata"]["understanding"]["excluded_genres"], ["Comedy"])
             
-            try:
-                response = client.get("/api/v1/recommendations/semantic?q=non-comedy%20movies%20after%201990&limit=3")
-                self.assertEqual(response.status_code, 200)
-                data = response.json()
-                
-                self.assertEqual(data["query"], "non-comedy movies after 1990")
-                self.assertEqual(data["understanding"]["excluded_genres"], ["Comedy"])
-                
-                # Toy Story (Comedy) and Alien (< 1990) are excluded
-                # Matrix and TDKR remain
-                titles = [r["title"] for r in data["results"]]
-                self.assertEqual(len(titles), 2)
-                self.assertIn("The Matrix", titles)
-                self.assertIn("The Dark Knight Rises", titles)
-                self.assertNotIn("Toy Story", titles)
-                self.assertNotIn("Alien", titles)
-                
-                # Check presence of custom reasons
-                self.assertTrue(all("recommendation_reason" in r for r in data["results"]))
-            finally:
-                app.dependency_overrides.clear()
+            # Toy Story (Comedy) and Alien (< 1990) are excluded
+            # Matrix and TDKR remain
+            titles = [r["title"] for r in data["recommendations"]]
+            self.assertEqual(len(titles), 2)
+            self.assertIn("The Matrix", titles)
+            self.assertIn("The Dark Knight Rises", titles)
+            self.assertNotIn("Toy Story", titles)
+            self.assertNotIn("Alien", titles)
+            
+            # Check presence of custom reasons
+            self.assertTrue(all("recommendation_reason" in r for r in data["recommendations"]))
+        finally:
+            app.dependency_overrides.clear()
 
 
 if __name__ == "__main__":

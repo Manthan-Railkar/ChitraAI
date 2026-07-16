@@ -88,25 +88,43 @@ class DatasetMerger:
             pl.col("movielens_id").drop_nulls().first()
         ]).filter(pl.col("imdb_id").is_not_null())
         
+        # Resolve duplicate tmdb_id mappings: set secondary mappings to null so they don't cause key conflicts
+        master_links = master_links.with_columns(
+            pl.when(
+                (pl.col("tmdb_id").is_not_null()) & 
+                (pl.col("imdb_id") != pl.col("imdb_id").first().over("tmdb_id"))
+            )
+            .then(pl.lit(None).cast(pl.Int64))
+            .otherwise(pl.col("tmdb_id"))
+            .alias("tmdb_id")
+        )
+        
         # Join Wikipedia links on IMDb ID
+        wiki_with_imdb = wiki_with_imdb.unique(subset=["wiki_page"]).unique(subset=["imdb_id"])
         master_links = master_links.join(wiki_with_imdb, on="imdb_id", how="left")
         
-        # Append TMDb entries that don't have an IMDb ID
-        tmdb_only = tmdb_links.filter(pl.col("imdb_id").is_null() & pl.col("tmdb_id").is_not_null()).group_by("tmdb_id").agg([
+        # Append TMDb entries that don't have an IMDb ID and aren't already mapped
+        existing_tmdb_ids = master_links.filter(pl.col("tmdb_id").is_not_null()).select("tmdb_id").unique()
+        tmdb_only = tmdb_links.filter(
+            pl.col("imdb_id").is_null() & 
+            pl.col("tmdb_id").is_not_null()
+        ).join(existing_tmdb_ids, on="tmdb_id", how="anti").group_by("tmdb_id").agg([
             pl.col("imdb_id").first(), # will be null
             pl.col("movielens_id").first() # will be null
         ]).with_columns(pl.lit(None).cast(pl.String).alias("wiki_page"))
         
-        # Append Wikipedia entries that are unlinked
-        wiki_only = wiki_unlinked.with_columns([
+        # Append Wikipedia entries that are unlinked and aren't already mapped
+        existing_wiki_pages = master_links.filter(pl.col("wiki_page").is_not_null()).select("wiki_page").unique()
+        wiki_only = wiki_unlinked.join(existing_wiki_pages, on="wiki_page", how="anti").with_columns([
             pl.lit(None).cast(pl.String).alias("imdb_id"),
             pl.lit(None).cast(pl.Int64).alias("tmdb_id"),
             pl.lit(None).cast(pl.Int64).alias("movielens_id")
         ])
 
-        # Append remaining IMDb-only entries (movies with 50+ votes not linked to TMDb/ML/Wiki)
+        # Append remaining IMDb-only entries (movies with 50+ votes not linked to TMDb/ML/Wiki) and aren't already mapped
         imdb_lookup_ids = imdb_lookup.select("imdb_id").unique()
-        imdb_only = imdb_lookup_ids.join(master_links, on="imdb_id", how="anti").with_columns([
+        existing_imdb_ids = master_links.filter(pl.col("imdb_id").is_not_null()).select("imdb_id").unique()
+        imdb_only = imdb_lookup_ids.join(existing_imdb_ids, on="imdb_id", how="anti").with_columns([
             pl.lit(None).cast(pl.Int64).alias("tmdb_id"),
             pl.lit(None).cast(pl.Int64).alias("movielens_id"),
             pl.lit(None).cast(pl.String).alias("wiki_page")
@@ -126,10 +144,12 @@ class DatasetMerger:
         logger.info("[Merger] Re-keying datasets with canonical movie indices...")
         master_map_lazy = master_map.lazy()
         
-        imdb_keyed = imdb_filtered.join(master_map_lazy.select(["movie_idx", "imdb_id"]), on="imdb_id", how="inner")
-        tmdb_keyed = tmdb.join(master_map_lazy.select(["movie_idx", "tmdb_id"]), on="tmdb_id", how="inner")
-        movielens_keyed = movielens.join(master_map_lazy.select(["movie_idx", "movielens_id"]), on="movielens_id", how="inner")
-        wiki_keyed = wikipedia.join(master_map_lazy.select(["movie_idx", "wiki_page"]), on="wiki_page", how="inner")
+        id_columns = ["imdb_id", "tmdb_id", "movielens_id", "wiki_page"]
+        
+        imdb_keyed = imdb_filtered.join(master_map_lazy.select(["movie_idx", "imdb_id"]), on="imdb_id", how="inner").drop(id_columns)
+        tmdb_keyed = tmdb.join(master_map_lazy.select(["movie_idx", "tmdb_id"]), on="tmdb_id", how="inner").drop(id_columns)
+        movielens_keyed = movielens.join(master_map_lazy.select(["movie_idx", "movielens_id"]), on="movielens_id", how="inner").drop(id_columns)
+        wiki_keyed = wikipedia.join(master_map_lazy.select(["movie_idx", "wiki_page"]), on="wiki_page", how="inner").drop(id_columns)
 
         # 7. Concatenate and Sort by dataset priority
         # TMDb (1) -> IMDb (2) -> MovieLens (3) -> Wikipedia (4)
@@ -165,10 +185,6 @@ class DatasetMerger:
 
         logger.info("[Merger] Running group-by aggregation to build final movie knowledge base...")
         final_movies = all_rows.group_by("movie_idx").agg([
-            pl.col("imdb_id").drop_nulls().first(),
-            pl.col("tmdb_id").drop_nulls().first(),
-            pl.col("movielens_id").drop_nulls().first(),
-            pl.col("wiki_page").drop_nulls().first(),
             pl.col("title").drop_nulls().first(),
             pl.col("original_title").drop_nulls().first(),
             pl.col("overview").drop_nulls().first(),
@@ -193,8 +209,16 @@ class DatasetMerger:
             pl.col("streaming_providers").list.explode().unique().drop_nulls(),
             pl.col("collection_name").drop_nulls().first(),
             pl.col("certification").drop_nulls().first(),
+            pl.col("tagline").drop_nulls().first(),
             pl.col("document").drop_nulls().first()
-        ]).drop("movie_idx").collect()
+        ])
+        
+        # Join master_map back to restore clean canonical IDs
+        final_movies = final_movies.join(
+            master_map_lazy.select(["movie_idx", "imdb_id", "tmdb_id", "movielens_id", "wiki_page"]), 
+            on="movie_idx", 
+            how="inner"
+        ).drop("movie_idx").collect()
 
         # Generate natural language summaries for embedding
         from app.datasets.document_generator import generate_knowledge_base_documents

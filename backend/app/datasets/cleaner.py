@@ -28,9 +28,9 @@ def scale_rating(col_name: str, source_max: float, target_max: float = 10.0) -> 
 def parse_json_list(col_name: str, key_name: str = "name") -> pl.Expr:
     """
     Parses a stringified JSON array natively inside Polars using regex.
-    Extracts the values of 'key_name' into a list of strings.
+    Extracts the values of 'key_name' into a list of strings (supporting both single and double quotes).
     """
-    pattern = rf'"{key_name}":\s*"([^"]*?)"'
+    pattern = rf'[\'"]{key_name}[\'"]:\s*[\'"]([^\'"]*?)[\'"]'
     return (
         pl.col(col_name)
         .str.extract_all(pattern)
@@ -40,10 +40,10 @@ def parse_json_list(col_name: str, key_name: str = "name") -> pl.Expr:
 def parse_crew_directors(col_name: str) -> pl.Expr:
     """
     Parses the stringified TMDb crew JSON array natively in Polars using regex.
-    Filters and extracts name values only for members where job is Director.
+    Filters and extracts name values only for members where job is Director (supporting both single and double quotes).
     """
-    director_object_pattern = r'\{[^{}]*?"job":\s*"Director"[^{}]*?\}'
-    name_pattern = r'"name":\s*"([^"]*?)"'
+    director_object_pattern = r'\{[^{}]*?[\'"]job[\'"]:\s*[\'"]Director[\'"][^{}]*?\}'
+    name_pattern = r'[\'"]name[\'"]:\s*[\'"]([^\'"]*?)[\'"]'
     return (
         pl.col(col_name)
         .str.extract_all(director_object_pattern)
@@ -55,8 +55,9 @@ class IMDbCleaner:
     """Cleaner for IMDb dataset."""
     @staticmethod
     def clean_title_basics(lf: pl.LazyFrame) -> pl.LazyFrame:
-        # Standardize missing values and clean types
-        return lf.with_columns([
+        # Standardize missing values and clean types, filtering only to movies, shorts, and TV movies
+        lf_filtered = lf.filter(pl.col("titleType").is_in(["movie", "short", "tvMovie"]))
+        return lf_filtered.with_columns([
             trim_and_clean_text("tconst"),
             trim_and_clean_text("titleType"),
             trim_and_clean_text("primaryTitle"),

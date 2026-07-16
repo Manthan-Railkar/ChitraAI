@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     OMDB_API_KEY: str = ""
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_COLLECTION: str = "movies"
-    EMBEDDING_MODEL: str = "BAAI/bge-base-en-v1.5"
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
     DEVICE: str = "cpu"
     LOG_LEVEL: str = "INFO"
 
@@ -36,9 +36,25 @@ class Settings(BaseSettings):
     QDRANT_BATCH_SIZE: int = 500
     QDRANT_INGEST_CHECKPOINT_INTERVAL: int = 10
 
-    # Gemini API Settings
-    GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    # LLM Provider API Settings
+    GROQ_API_KEY: str = ""
+    LLM_PROVIDER: str = "groq"
+    LLM_MODEL: str = "llama-3.1-8b-instant"
+
+    # Recommendation Fallback Settings
+    SEMANTIC_CONFIDENCE_THRESHOLD: float = 0.70
+
+    # Hybrid Retrieval Engine Settings
+    HYBRID_SEMANTIC_WEIGHT: float = 0.55
+    HYBRID_BM25_WEIGHT: float = 0.25
+    HYBRID_METADATA_WEIGHT: float = 0.20
+
+    # Production Optimization & Cache Settings
+    CACHE_SIZE: int = 100
+    TIMEOUT_SECONDS: float = 3.0
+    MAX_RETRIES: int = 2
+    TMDB_SEMAPHORE_LIMIT: int = 10
+    FUSION_CANDIDATES_LIMIT: int = 1000
 
 
 

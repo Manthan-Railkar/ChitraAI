@@ -56,9 +56,11 @@ async def enrich_movie_with_tmdb(movie: Dict[str, Any], tmdb_service: TMDbServic
                 
             # Poster and Backdrop Paths
             if details.get("poster_path"):
-                movie["poster_path"] = details.get("poster_path")
+                poster = details.get("poster_path")
+                movie["poster_path"] = poster if poster.startswith("http") else f"https://image.tmdb.org/t/p/w500{poster}"
             if details.get("backdrop_path"):
-                movie["backdrop_path"] = details.get("backdrop_path")
+                backdrop = details.get("backdrop_path")
+                movie["backdrop_path"] = backdrop if backdrop.startswith("http") else f"https://image.tmdb.org/t/p/w1280{backdrop}"
 
             # Genres
             genres = [g.get("name") for g in details.get("genres", []) if g.get("name")]
@@ -79,12 +81,7 @@ async def enrich_movie_with_tmdb(movie: Dict[str, Any], tmdb_service: TMDbServic
                 movie["keywords"] = keywords
 
 
-            # Trailer URL
-            videos = details.get("videos", {}).get("results", [])
-            for video in videos:
-                if video.get("site") == "YouTube" and video.get("type") == "Trailer":
-                    movie["trailer_url"] = f"https://www.youtube.com/watch?v={video.get('key')}"
-                    break
+
             
             # US Streaming Providers
             providers = details.get("watch/providers", {}).get("results", {}).get("US", {}).get("flatrate", [])

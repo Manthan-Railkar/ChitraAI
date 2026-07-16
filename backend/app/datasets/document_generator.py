@@ -75,6 +75,11 @@ def build_document_expr() -> pl.Expr:
         pl.when(pl.col("keywords").is_not_null() & (pl.col("keywords").list.len() > 0))
         .then(pl.lit("\nKeywords / Themes: ") + pl.col("keywords").list.join(", "))
         .otherwise(pl.lit("")) +
+
+        # Tagline
+        pl.when(pl.col("tagline").is_not_null() & (pl.col("tagline").str.strip_chars() != ""))
+        .then(pl.lit("\nTagline: ") + pl.col("tagline"))
+        .otherwise(pl.lit("")) +
         
         # Description
         pl.when(desc_expr.is_not_null() & (desc_expr.str.strip_chars().str.len_chars() > 0))

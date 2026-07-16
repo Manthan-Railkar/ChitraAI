@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import Lenis from 'lenis';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { useAuth } from '@/contexts/AuthContext';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -14,6 +15,7 @@ export const AppShell: React.FC = () => {
   const location = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { user, profile } = useAuth();
 
   useEffect(() => {
     // Lenis smooth scroll + GSAP ScrollTrigger integration
@@ -45,14 +47,12 @@ export const AppShell: React.FC = () => {
     { path: '/', label: 'Home' },
     { path: '/search', label: 'Product' },
     { path: '/favorites', label: 'Favorites' },
-    { path: '/profile', label: 'Profile' },
-    { path: '/dashboard', label: 'Dashboard' },
   ];
 
   return (
     <div className="min-h-screen bg-black text-foreground flex flex-col font-sans select-none relative overflow-x-hidden">
       {/* WebGL Light Rays background covering the entire screen with exact user props */}
-      {location.pathname !== '/search' && (
+      {location.pathname !== '/search' && location.pathname !== '/favorites' && (
         <div className="fixed inset-0 pointer-events-none overflow-hidden select-none z-0">
           <LightRays
             raysOrigin="top-center"
@@ -82,14 +82,16 @@ export const AppShell: React.FC = () => {
           }`}
         >
           {/* Brand Logo */}
-          <Link to="/" className="flex items-center select-none z-55 pl-2">
-            <span className="text-base font-extrabold tracking-wider uppercase text-white">
-              Chitra<span className="text-primary">AI</span>
-            </span>
-          </Link>
+          <div className="flex-1 flex justify-start z-55 pl-2">
+            <Link to="/" className="flex items-center select-none">
+              <span className="text-base font-extrabold tracking-wider uppercase text-white">
+                Chitra<span className="text-primary">AI</span>
+              </span>
+            </Link>
+          </div>
 
           {/* Navigation Tabs (Desktop) */}
-          <nav className="hidden md:flex items-center gap-7">
+          <nav className="hidden md:flex items-center justify-center gap-7 flex-1">
             {navItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
@@ -107,19 +109,29 @@ export const AppShell: React.FC = () => {
           </nav>
 
           {/* Actions (Desktop & Tablet) */}
-          <div className="flex items-center gap-2 sm:gap-4 z-55 pr-1">
-            {/* Theme Toggle Button */}
-            <button className="w-8 h-8 rounded-full border border-white/[0.08] hover:border-white/15 flex items-center justify-center text-white/30 hover:text-white/70 transition-all duration-200 cursor-pointer bg-white/[0.03]">
-              <Moon className="w-3.5 h-3.5" />
-            </button>
-
-            {/* Sign In Link (Desktop & Tablet) */}
-            <Link
-              to="/profile"
-              className="hidden sm:inline-block text-[12px] font-semibold uppercase tracking-[0.15em] text-white/40 hover:text-white/80 transition-colors duration-200 cursor-pointer"
-            >
-              Sign In
-            </Link>
+          <div className="flex-1 flex items-center justify-end gap-2 sm:gap-4 z-55 pr-1">
+            {/* Auth State (Desktop & Tablet) */}
+            {user ? (
+              <Link
+                to="/profile"
+                className="hidden sm:inline-flex items-center gap-2 cursor-pointer group"
+              >
+                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-rose-500 via-purple-600 to-blue-500 flex items-center justify-center text-white text-[10px] font-black uppercase shadow-sm group-hover:shadow-purple-500/20 transition-shadow overflow-hidden">
+                  {profile?.avatar_url ? (
+                    <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    (profile?.display_name?.[0] || user.email?.[0] || 'U').toUpperCase()
+                  )}
+                </div>
+              </Link>
+            ) : (
+              <Link
+                to="/profile"
+                className="hidden sm:inline-block text-[12px] font-semibold uppercase tracking-[0.15em] text-white/40 hover:text-white/80 transition-colors duration-200 cursor-pointer"
+              >
+                Sign In
+              </Link>
+            )}
 
             {/* Pill button (Desktop & Tablet) */}
             <Link
@@ -175,7 +187,7 @@ export const AppShell: React.FC = () => {
                   to="/profile"
                   className="w-full text-center py-2.5 rounded-full border border-white/10 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-white transition-colors cursor-pointer"
                 >
-                  Sign In
+                  {user ? (profile?.display_name || 'My Account') : 'Sign In'}
                 </Link>
                 <Link
                   to="/search"

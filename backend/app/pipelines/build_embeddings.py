@@ -47,7 +47,7 @@ def _load_knowledge_base(limit: Optional[int] = None) -> pl.DataFrame:
         raise FileNotFoundError(f"Knowledge base not found at {kb_path}")
 
     logger.info(f"Loading knowledge base from {kb_path}...")
-    columns = METADATA_COLUMNS + ["document"]
+    columns = METADATA_COLUMNS + ["document", "popularity"]
     df = pl.read_parquet(kb_path, columns=columns)
 
     # Filter out rows with null or empty documents
@@ -59,9 +59,13 @@ def _load_knowledge_base(limit: Optional[int] = None) -> pl.DataFrame:
     if filtered_count > 0:
         logger.warning(f"Filtered out {filtered_count:,} rows with null/empty documents.")
 
+    # Sort by popularity descending to embed the most popular/well-known movies first
+    df = df.sort("popularity", descending=True)
+    df = df.drop("popularity")
+
     if limit is not None and limit > 0:
         df = df.head(limit)
-        logger.info(f"Limited to first {limit:,} movies for processing.")
+        logger.info(f"Limited to top {limit:,} most popular movies for processing.")
 
     logger.info(f"Loaded {df.height:,} movies with valid documents.")
     return df

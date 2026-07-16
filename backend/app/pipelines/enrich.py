@@ -40,7 +40,12 @@ def parse_args() -> argparse.Namespace:
 def extract_enrichment_data(api_response: Dict[str, Any]) -> Dict[str, Any]:
     """Parses raw TMDb API response into canonical enrichment fields."""
     poster_path = api_response.get("poster_path")
+    if poster_path and not poster_path.startswith("http"):
+        poster_path = f"https://image.tmdb.org/t/p/w500{poster_path}"
+        
     backdrop_path = api_response.get("backdrop_path")
+    if backdrop_path and not backdrop_path.startswith("http"):
+        backdrop_path = f"https://image.tmdb.org/t/p/w1280{backdrop_path}"
     
     collection_name = None
     belongs = api_response.get("belongs_to_collection")
