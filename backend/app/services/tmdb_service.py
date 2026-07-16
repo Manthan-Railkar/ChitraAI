@@ -130,7 +130,7 @@ class TMDbService:
         # 2. Fetch from API
         endpoint = f"movie/{tmdb_id}"
         extra_params = {
-            "append_to_response": "videos,watch/providers,release_dates,keywords,credits"
+            "append_to_response": "videos,watch/providers,release_dates,keywords,credits,similar,recommendations,images"
         }
         
         client = self.get_client()

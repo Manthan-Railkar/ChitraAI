@@ -49,17 +49,40 @@ class Settings(BaseSettings):
     HYBRID_BM25_WEIGHT: float = 0.25
     HYBRID_METADATA_WEIGHT: float = 0.20
 
-    # Production Optimization & Cache Settings
-    CACHE_SIZE: int = 100
-    TIMEOUT_SECONDS: float = 3.0
-    MAX_RETRIES: int = 2
-    TMDB_SEMAPHORE_LIMIT: int = 10
-    FUSION_CANDIDATES_LIMIT: int = 1000
+    # Feature Flags
     USE_TMDB_RETRIEVAL: bool = True
+    METRICS_ENABLED: bool = True
 
+    # --- Cache TTLs (seconds) ---
+    CACHE_TTL_MOVIE_DETAILS: int = 86400      # 24 hours
+    CACHE_TTL_DISCOVER: int = 3600             # 1 hour
+    CACHE_TTL_SEARCH: int = 3600               # 1 hour
+    CACHE_TTL_INTENT: int = 1800               # 30 minutes
 
+    # --- Cache Sizes ---
+    RESPONSE_CACHE_SIZE: int = 200
+    INTENT_CACHE_SIZE: int = 200
+
+    # --- TMDb API Settings ---
+    TMDB_TIMEOUT: float = 8.0
+    TMDB_MAX_RETRIES: int = 3
+    TMDB_POOL_SIZE: int = 20
+    TMDB_SEMAPHORE_LIMIT: int = 10
+    TMDB_BACKOFF_BASE: float = 0.5
+    TMDB_BACKOFF_MAX: float = 8.0
+
+    # --- Groq / LLM API Settings ---
+    GROQ_TIMEOUT: float = 15.0
+    GROQ_MAX_RETRIES: int = 2
+
+    # --- General Performance ---
+    FUSION_CANDIDATES_LIMIT: int = 1000
+
+    # Legacy aliases (kept for backward compatibility)
+    CACHE_SIZE: int = 200
+    TIMEOUT_SECONDS: float = 8.0
+    MAX_RETRIES: int = 3
 
 
 # Instantiate settings to be imported globally
 settings = Settings()
-

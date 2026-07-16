@@ -200,7 +200,9 @@ class RecommendationService:
                     }
                     
                     logger.info(f"[TMDb Retrieval] Success. Candidates retrieved: {len(top_candidates)}")
-                    return intent, top_candidates
+                    from app.services.enrichment_helper import enrich_movie_list
+                    enriched_candidates = await enrich_movie_list(top_candidates, self.tmdb_service)
+                    return intent, enriched_candidates
                 else:
                     logger.warning("[TMDb Retrieval] Discover returned 0 candidates. Falling back to local retrieval...")
             except Exception as e:
@@ -212,8 +214,9 @@ class RecommendationService:
             intent=intent,
             limit=limit
         )
-        
-        return intent, results
+        from app.services.enrichment_helper import enrich_movie_list
+        enriched_results = await enrich_movie_list(results, self.tmdb_service)
+        return intent, enriched_results
 
     async def recommend_movies_from_understanding(
         self, understanding: Any, limit: int = 10

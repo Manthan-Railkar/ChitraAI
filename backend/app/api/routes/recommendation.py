@@ -53,6 +53,26 @@ class StandardizedMovie(BaseModel):
     streaming_providers: List[str] = Field(default_factory=list, description="Streaming providers in the US")
     certification: Optional[str] = Field(None, description="US age certification")
 
+    # Additional enrichment fields
+    imdb_id: Optional[str] = Field(None, description="IMDb movie ID")
+    status: Optional[str] = Field(None, description="TMDb movie status")
+    original_language: Optional[str] = Field(None, description="Original language")
+    production_countries: List[str] = Field(default_factory=list, description="Production countries")
+    budget: Optional[int] = Field(None, description="Movie budget")
+    revenue: Optional[int] = Field(None, description="Movie revenue")
+    homepage: Optional[str] = Field(None, description="Official homepage link")
+    collection: Optional[str] = Field(None, description="Belonging collection name")
+    writers: List[str] = Field(default_factory=list, description="Writers")
+    producer: Optional[str] = Field(None, description="Producer name")
+    composer: Optional[str] = Field(None, description="Composer name")
+    cinematographer: Optional[str] = Field(None, description="Cinematographer name")
+    logo_url: Optional[str] = Field(None, description="Logo URL")
+    similar_movies: List[Dict[str, Any]] = Field(default_factory=list, description="Top 5 similar movies")
+    recommended_movies: List[Dict[str, Any]] = Field(default_factory=list, description="Top 5 recommended movies")
+    youtube_key: Optional[str] = Field(None, description="YouTube Video Key")
+    trailer_type: Optional[str] = Field(None, description="Trailer type")
+    trailer_name: Optional[str] = Field(None, description="Trailer name")
+
 
 class RecommendationResponse(BaseModel):
     """Schema representing the standardized semantic recommendation response."""
@@ -120,7 +140,27 @@ def map_to_standardized_movie(movie: dict) -> StandardizedMovie:
         backdrop_path=movie.get("backdrop_path"),
         trailer_url=movie.get("trailer_url"),
         streaming_providers=movie.get("streaming_providers") or [],
-        certification=movie.get("certification")
+        certification=movie.get("certification"),
+        
+        # New enrichment fields
+        imdb_id=movie.get("imdb_id"),
+        status=movie.get("status"),
+        original_language=movie.get("original_language"),
+        production_countries=movie.get("production_countries") or [],
+        budget=movie.get("budget"),
+        revenue=movie.get("revenue"),
+        homepage=movie.get("homepage"),
+        collection=movie.get("collection"),
+        writers=movie.get("writers") or [],
+        producer=movie.get("producer"),
+        composer=movie.get("composer"),
+        cinematographer=movie.get("cinematographer"),
+        logo_url=movie.get("logo_url"),
+        similar_movies=movie.get("similar_movies") or [],
+        recommended_movies=movie.get("recommended_movies") or [],
+        youtube_key=movie.get("youtube_key"),
+        trailer_type=movie.get("trailer_type"),
+        trailer_name=movie.get("trailer_name")
     )
 
 
@@ -225,14 +265,8 @@ async def execute_recommendation_flow(
                         source = "api"
                         break
 
-        # Step 5: Dynamic real-time TMDb enrichment
-        t_enrich_start = time.perf_counter()
-        enriched_results = await enrich_movie_list(results, tmdb_service)
-        time_enrich = round((time.perf_counter() - t_enrich_start) * 1000, 2)
-        logger.info(f"[TIMING] TMDb Enrichment: {time_enrich} ms")
-        
         # Step 6: Map to Response Models
-        formatted_results = [map_to_standardized_movie(movie) for movie in enriched_results]
+        formatted_results = [map_to_standardized_movie(movie) for movie in results]
         confidence_score = evaluate_semantic_confidence(results, limit)
         elapsed_time_ms = round((time.perf_counter() - total_start) * 1000, 2)
 

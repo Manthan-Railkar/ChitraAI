@@ -27,7 +27,9 @@ from app.services.recommendation_service import RecommendationService
 from app.services.local_retrieval import LocalRetrievalEngine
 from app.services.intent_extractor import IntentExtractor, RecommendationIntent
 from app.api.routes.query import QueryUnderstandingResult, YearConstraints
-from app.api.deps import get_recommendation_service
+from app.api.deps import get_recommendation_service, get_tmdb_service
+from app.services.tmdb_service import TMDbService
+from app.core.config import settings
 import polars as pl
 
 
@@ -35,6 +37,7 @@ class TestHybridRecommendation(unittest.TestCase):
     """Tests for RecommendationService and FastAPI recommendations route."""
 
     def setUp(self):
+        settings.USE_TMDB_RETRIEVAL = False
         # 1. Setup mock embedding service
         self.mock_embedding_service = MagicMock(spec=EmbeddingService)
         # Mock 768-dim query embedding vector
@@ -204,6 +207,9 @@ class TestHybridRecommendation(unittest.TestCase):
         self.mock_intent_extractor = MagicMock(spec=IntentExtractor)
         self.recommend_service = RecommendationService(self.local_engine, self.mock_intent_extractor)
 
+    def tearDown(self):
+        settings.USE_TMDB_RETRIEVAL = True
+
     def test_query_builder_document(self):
         """Verify structured JSON maps correctly to a text search document."""
         understanding = QueryUnderstandingResult(
@@ -313,8 +319,15 @@ class TestHybridRecommendation(unittest.TestCase):
             )
         )
         
-        # Patch get_recommendation_service to use our service
+        # Patch dependencies
         app.dependency_overrides[get_recommendation_service] = lambda: self.recommend_service
+        
+        mock_tmdb = MagicMock(spec=TMDbService)
+        mock_tmdb.api_key = None
+        mock_tmdb.fetch_movie_details = AsyncMock(return_value=None)
+        mock_tmdb.fetch_tmdb_id_by_imdb = AsyncMock(return_value=None)
+        self.recommend_service.tmdb_service = mock_tmdb
+        app.dependency_overrides[get_tmdb_service] = lambda: mock_tmdb
         
         try:
             response = client.get("/api/v1/recommendations/semantic?q=non-comedy%20movies%20after%201990&limit=3")

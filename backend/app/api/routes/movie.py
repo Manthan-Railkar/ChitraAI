@@ -49,6 +49,27 @@ class MovieDetailResponse(BaseModel):
     certification: Optional[str] = Field(None, description="US age certification")
     runtime_minutes: Optional[int] = Field(None, description="Runtime in minutes")
 
+    # Additional enrichment fields
+    tmdb_id: Optional[int] = Field(None, description="TMDb ID")
+    imdb_id: Optional[str] = Field(None, description="IMDb ID")
+    status: Optional[str] = Field(None, description="TMDb movie status")
+    original_language: Optional[str] = Field(None, description="Original language")
+    production_countries: List[str] = Field(default_factory=list, description="Production countries")
+    budget: Optional[int] = Field(None, description="Movie budget")
+    revenue: Optional[int] = Field(None, description="Movie revenue")
+    homepage: Optional[str] = Field(None, description="Official homepage link")
+    collection: Optional[str] = Field(None, description="Belonging collection name")
+    writers: List[str] = Field(default_factory=list, description="Writers")
+    producer: Optional[str] = Field(None, description="Producer name")
+    composer: Optional[str] = Field(None, description="Composer name")
+    cinematographer: Optional[str] = Field(None, description="Cinematographer name")
+    logo_url: Optional[str] = Field(None, description="Logo URL")
+    similar_movies: List[Dict[str, Any]] = Field(default_factory=list, description="Top 5 similar movies")
+    recommended_movies: List[Dict[str, Any]] = Field(default_factory=list, description="Top 5 recommended movies")
+    youtube_key: Optional[str] = Field(None, description="YouTube Video Key")
+    trailer_type: Optional[str] = Field(None, description="Trailer type")
+    trailer_name: Optional[str] = Field(None, description="Trailer name")
+
 
 class MovieEnvelopeResponse(BaseModel):
     """Schema representing wrapped movie details envelope response containing execution statistics."""
@@ -212,10 +233,6 @@ async def get_movie_details(
     # Enrich dynamically using TMDb
     enriched_dict = await enrich_movie_with_tmdb(movie_dict, tmdb_service)
     
-    # Strip utility fields to conform to response schema
-    enriched_dict.pop("tmdb_id", None)
-    enriched_dict.pop("imdb_id", None)
-
     elapsed_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
     response = MovieEnvelopeResponse(
