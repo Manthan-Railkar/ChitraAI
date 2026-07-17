@@ -52,19 +52,19 @@ ChitraAI splits its logic between a client-side application (React + Vite) and a
 ### High-Level System Architecture
 ```mermaid
 graph LR
-    subgraph Frontend Client (Vercel)
+    subgraph "Frontend Client (Vercel)"
         UI[React / Vite Web App]
         SupaSDK[Supabase Client SDK]
     end
 
-    subgraph Backend Server (Render)
+    subgraph "Backend Server (Render)"
         API[FastAPI Router]
         LocalRet[Local Retrieval Engine]
         EmbSrv[Embedding Service]
         QdrantClient[Qdrant Client]
     end
 
-    subgraph External Cloud Services
+    subgraph "External Cloud Services"
         Supabase[(Supabase Auth & DB)]
         QdrantCloud[(Qdrant Cloud Vector DB)]
         TMDb[(TMDb Movie API)]
