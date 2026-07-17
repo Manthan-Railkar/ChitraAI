@@ -335,7 +335,6 @@ export const PosterSpiral: React.FC<PosterSpiralProps> = ({ posterUrls, classNam
         isTouching = true;
         touchLastY = e.touches[0].clientY;
         touchVelocity = 0;
-        lastTouchTimestamp = performance.now();
         container.style.cursor = 'grabbing';
       };
 
@@ -349,7 +348,6 @@ export const PosterSpiral: React.FC<PosterSpiralProps> = ({ posterUrls, classNam
         scrollOffset += deltaY * inertia.scrollSensitivity * inertia.strength * 0.8;
         updateUVOffset();
         touchLastY = currentY;
-        lastTouchTimestamp = performance.now();
       };
 
       const onTouchEnd = (e: TouchEvent) => {
