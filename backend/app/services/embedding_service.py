@@ -65,6 +65,11 @@ class EmbeddingService:
 
     def get_embedding_dimension(self) -> int:
         """Returns the output embedding dimension of the loaded model."""
+        if settings.EMBEDDING_MODEL == "all-MiniLM-L6-v2" or "MiniLM" in settings.EMBEDDING_MODEL:
+            return 384
+        if "mock" in settings.EMBEDDING_MODEL:
+            return 768
+            
         try:
             if not ModelManager._is_initialized:
                 ModelManager.load_model()

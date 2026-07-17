@@ -14,11 +14,8 @@ from app.api.routes.admin import router as admin_router
 from app.api.routes.query import router as query_router
 from app.api.routes.stats import router as stats_router
 
-
 # Initialize logging
 setup_logging()
-
-
 
 import sys
 from app.core.model_manager import ModelManager
@@ -30,20 +27,56 @@ from app.api.deps import (
     tmdb_service
 )
 
+def get_memory_usage_mb() -> float:
+    """Returns the resident set size (RSS) memory usage of the current process in MB."""
+    import os
+    if os.path.exists("/proc/self/status"):
+        try:
+            with open("/proc/self/status", "r") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            return float(parts[1]) / 1024.0
+        except Exception:
+            pass
+            
+    try:
+        import resource
+        import sys
+        factor = 1024.0 * 1024.0 if sys.platform == "darwin" else 1024.0
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / factor
+    except Exception:
+        pass
+        
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        return process.memory_info().rss / (1024.0 * 1024.0)
+    except Exception:
+        pass
+        
+    return 0.0
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup Event
     logger.info("ChitraAI Backend starting up...")
+    mem_start = get_memory_usage_mb()
+    logger.info(f"[Memory Profile] Initial RAM: {mem_start:.2f} MB")
     
     try:
-        # Step 1, 2, 3: Resolve compute device, load Sentence Transformer once, and warm up
-        logger.info("[Startup Step 1-3] Resolving device, loading Sentence Transformer, and warming up...")
-        ModelManager.load_model()
+        # Step 1, 2, 3: Defer model load
+        logger.info("[Startup Step 1-3] ModelManager loading deferred (lazy loading enabled)...")
+        mem_after_model = get_memory_usage_mb()
+        logger.info(f"[Memory Profile] RAM after model deferral: {mem_after_model:.2f} MB (Change: {mem_after_model - mem_start:+.2f} MB)")
         
-        # Step 4: Initialize Local Retrieval Engine (loads parquet metadata and precomputed embeddings)
-        logger.info("[Startup Step 4] Initializing Local Retrieval Engine (loading metadata and embeddings)...")
+        # Step 4: Initialize Local Retrieval Engine (loads parquet metadata only, connects to Qdrant without syncing)
+        logger.info("[Startup Step 4] Initializing Local Retrieval Engine...")
         local_retrieval_engine.initialize()
+        mem_after_retrieval = get_memory_usage_mb()
+        logger.info(f"[Memory Profile] RAM after Local Retrieval Engine init: {mem_after_retrieval:.2f} MB (Change: {mem_after_retrieval - mem_after_model:+.2f} MB)")
         
         # Step 5: Register all services
         logger.info("[Startup Step 5] Registering all service dependencies...")
@@ -51,6 +84,8 @@ async def lifespan(app: FastAPI):
         
         # Step 6: Start accepting requests
         logger.info("[Startup Step 6] Backend initialization completed successfully. Server is ready to accept requests.")
+        mem_final = get_memory_usage_mb()
+        logger.info(f"[Memory Profile] Final Startup RAM: {mem_final:.2f} MB")
         
     except Exception as e:
         logger.critical(f"ChitraAI Backend startup aborted due to critical initialization failure: {e}")
@@ -64,6 +99,7 @@ async def lifespan(app: FastAPI):
         await tmdb_service.close()
     except Exception as e:
         logger.error(f"Error closing TMDbService persistent client: {e}")
+
 
 app = FastAPI(
     title="ChitraAI API",

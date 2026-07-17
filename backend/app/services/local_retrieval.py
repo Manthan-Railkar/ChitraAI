@@ -570,7 +570,7 @@ class LocalRetrievalEngine:
         logger.info("LocalRetrievalEngine created.")
 
     def _init_qdrant(self) -> None:
-        """Initializes the Qdrant client and verifies/populates the collection."""
+        """Initializes the Qdrant client and verifies/populates the collection structure (does not index/sync vectors on startup)."""
         # 1. Determine if we should use local in-memory Qdrant (for tests or local development without cloud variables)
         is_test = (
             "pytest" in sys.modules or
@@ -624,91 +624,8 @@ class LocalRetrievalEngine:
                 )
             )
             logger.info(f"Collection '{settings.QDRANT_COLLECTION}' created successfully.")
-
-        # 3. Check if empty and upload if necessary
-        try:
-            info = self.qdrant_client.get_collection(collection_name=settings.QDRANT_COLLECTION)
-            points_count = info.points_count
-        except Exception as e:
-            logger.error(f"Failed to get collection info: {e}. Assuming empty.")
-            points_count = 0
-
-        if points_count == 0:
-            logger.info(f"Qdrant collection '{settings.QDRANT_COLLECTION}' is empty. Preparing automatic upload from local embeddings...")
-            
-            embeddings_path = self.embeddings_dir / "tmdb_embeddings.parquet"
-            if not embeddings_path.exists():
-                logger.warning(f"TMDb embeddings file not found at {embeddings_path}. Generating now locally...")
-                self._generate_embeddings(embeddings_path)
-                
-            emb_df = pl.read_parquet(embeddings_path)
-            aligned_df = self.movies_df.select(["tmdb_id"]).join(emb_df, on="tmdb_id", how="inner")
-            
-            tmdb_ids = aligned_df.select("tmdb_id").to_series().to_numpy()
-            raw_embs = np.vstack(list(aligned_df.select("embedding").to_series().to_numpy())).astype(np.float32)
-            
-            norms = np.linalg.norm(raw_embs, axis=1, keepdims=True)
-            norms = np.where(norms == 0, 1e-12, norms)
-            normalized_embs = raw_embs / norms
-            
-            batch_size = settings.QDRANT_BATCH_SIZE or 500
-            total_points = len(tmdb_ids)
-            uploaded_count = 0
-            
-            logger.info(f"Uploading {total_points} vectors to collection '{settings.QDRANT_COLLECTION}'...")
-            
-            for i in range(0, total_points, batch_size):
-                batch_ids = tmdb_ids[i:i + batch_size]
-                batch_vectors = normalized_embs[i:i + batch_size]
-                
-                # Check for existing points in this batch for resumability
-                try:
-                    existing = self.qdrant_client.retrieve(
-                        collection_name=settings.QDRANT_COLLECTION,
-                        ids=[int(tid) for tid in batch_ids],
-                        with_payload=False,
-                        with_vectors=False
-                    )
-                    existing_ids = {p.id for p in existing}
-                except Exception as e:
-                    logger.warning(f"Failed to check existing points for batch: {e}. Upserting all in batch.")
-                    existing_ids = set()
-                
-                points_to_upload = []
-                for j, tid in enumerate(batch_ids):
-                    if int(tid) not in existing_ids:
-                        points_to_upload.append(
-                            PointStruct(
-                                id=int(tid),
-                                vector=batch_vectors[j].tolist(),
-                                payload={"tmdb_id": int(tid)}
-                            )
-                        )
-                
-                if points_to_upload:
-                    # Retry logic for upserting
-                    for attempt in range(1, 4):
-                        try:
-                            self.qdrant_client.upsert(
-                                collection_name=settings.QDRANT_COLLECTION,
-                                points=points_to_upload,
-                                wait=True
-                            )
-                            uploaded_count += len(points_to_upload)
-                            logger.info(f"Uploaded batch {i//batch_size + 1}: {len(points_to_upload)} vectors. Total uploaded: {uploaded_count}/{total_points}")
-                            break
-                        except Exception as e:
-                            if attempt == 3:
-                                logger.error(f"Failed to upload batch after 3 attempts: {e}")
-                                raise e
-                            logger.warning(f"Upsert failed (attempt {attempt}/3): {e}. Retrying in {1.0 * attempt}s...")
-                            time.sleep(1.0 * attempt)
-                else:
-                    logger.debug(f"Batch {i//batch_size + 1} already exists. Skipping.")
-            
-            logger.info(f"Automatic vector upload completed. Total uploaded points: {uploaded_count}")
         else:
-            logger.info(f"Qdrant collection '{settings.QDRANT_COLLECTION}' already contains {points_count} vectors. Skipping upload.")
+            logger.info(f"Collection '{settings.QDRANT_COLLECTION}' exists and is verified.")
 
     def _load_local_embeddings_matrix(self) -> None:
         """Lazy load local precomputed embeddings for fallback/test cases."""
@@ -740,7 +657,30 @@ class LocalRetrievalEngine:
             raise FileNotFoundError(f"TMDb canonical dataset not found at {tmdb_parquet_path}. Please run rebuild_tmdb_canonical.py first.")
             
         logger.info(f"Loading TMDb canonical metadata from {tmdb_parquet_path}...")
-        self.movies_df = pl.read_parquet(tmdb_parquet_path)
+        required_cols = [
+            "tmdb_id",
+            "title",
+            "original_title",
+            "overview",
+            "tagline",
+            "genres",
+            "cast",
+            "directors",
+            "writers",
+            "runtime_minutes",
+            "release_year",
+            "rating_value",
+            "vote_count",
+            "popularity",
+            "production_companies",
+            "languages",
+            "keywords",
+            "streaming_providers",
+            "collection_name",
+            "certification",
+            "plot_summary"
+        ]
+        self.movies_df = pl.read_parquet(tmdb_parquet_path, columns=required_cols)
         logger.info(f"Loaded {self.movies_df.height:,} movies.")
         
         self.tmdb_id_to_df_idx = {int(row["tmdb_id"]): idx for idx, row in enumerate(self.movies_df.select(["tmdb_id"]).to_dicts())}
@@ -768,9 +708,6 @@ class LocalRetrievalEngine:
         self._init_qdrant()
         
         logger.info("LocalRetrievalEngine initialized successfully.")
-        
-        # Build local BM25 index once
-        self._build_bm25_index()
         
         import gc
         gc.collect()

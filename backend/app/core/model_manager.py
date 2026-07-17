@@ -1,6 +1,5 @@
 import sys
 import time
-import torch
 import numpy as np
 from typing import Optional, Any
 from unittest.mock import MagicMock, AsyncMock
@@ -38,6 +37,7 @@ class ModelManager:
         )
 
         # 1. Resolve compute device
+        import torch
         requested_device = force_device or settings.DEVICE
         if requested_device.lower() == "cuda" and torch.cuda.is_available():
             cls._device = "cuda"
