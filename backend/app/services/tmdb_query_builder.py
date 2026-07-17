@@ -53,7 +53,7 @@ class TMDbQueryBuilder:
 
     @staticmethod
     async def build_query(intent: RecommendationIntent, tmdb_service: TMDbService) -> Dict[str, Any]:
-        params = {
+        params: Dict[str, Any] = {
             "include_adult": "false",
             "include_video": "false",
             "page": 1

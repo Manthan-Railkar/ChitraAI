@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict
+from typing import Dict, Any
 from loguru import logger
 import polars as pl
 
@@ -36,7 +36,7 @@ CANONICAL_COLUMNS = [
     "document"
 ]
 
-CANONICAL_SCHEMA = {
+CANONICAL_SCHEMA: Dict[str, Any] = {
     "imdb_id": pl.String,
     "tmdb_id": pl.Int64,
     "movielens_id": pl.Int64,

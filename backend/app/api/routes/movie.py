@@ -147,9 +147,16 @@ async def autocomplete_movies(
     if local_engine.movies_df is None:
         local_engine.initialize()
 
+    df = local_engine.movies_df
+    if df is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Movies database is not initialized."
+        )
+
     try:
         # Case-insensitive substring match on title
-        filtered = local_engine.movies_df.filter(
+        filtered = df.filter(
             pl.col("title").str.to_lowercase().str.contains(cleaned_q.lower())
         ).head(limit)
         
@@ -201,7 +208,14 @@ async def get_movie_details(
     if local_engine.movies_df is None:
         local_engine.initialize()
 
-    movie_row = get_movie_by_id(local_engine.movies_df, cleaned_movie_id)
+    df = local_engine.movies_df
+    if df is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Movies database is not initialized."
+        )
+
+    movie_row = get_movie_by_id(df, cleaned_movie_id)
     if not movie_row:
         raise HTTPException(status_code=404, detail=f"Movie with ID '{cleaned_movie_id}' not found.")
 

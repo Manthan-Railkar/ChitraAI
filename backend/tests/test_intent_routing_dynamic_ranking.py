@@ -111,13 +111,15 @@ class TestIntentRoutingAndDynamicRanking(unittest.IsolatedAsyncioTestCase):
     def test_award_score_calculation(self):
         """Verify that award score is correctly computed based on keywords in metadata fields."""
         # Movie 101 has 'Academy Award' in plot_summary
-        movie_101 = self.local_engine.movies_df.to_dicts()[0]
+        df = self.local_engine.movies_df
+        assert df is not None
+        movie_101 = df.to_dicts()[0]
         score_101 = calculate_award_score(movie_101)
         self.assertGreater(score_101, 0.0)
         self.assertAlmostEqual(score_101, 0.33, places=2)
 
         # Movie 103 has 'Award-winning' in plot_summary but doesn't match standard award names (Oscars, BAFTA etc.)
-        movie_103 = self.local_engine.movies_df.to_dicts()[2]
+        movie_103 = df.to_dicts()[2]
         score_103 = calculate_award_score(movie_103)
         self.assertEqual(score_103, 0.0)
 
@@ -136,7 +138,9 @@ class TestIntentRoutingAndDynamicRanking(unittest.IsolatedAsyncioTestCase):
 
     def test_dynamic_ranking_profiles(self):
         """Verify that different ranking modes use separate scoring weighting profiles."""
-        movies = self.local_engine.movies_df.to_dicts()
+        df = self.local_engine.movies_df
+        assert df is not None
+        movies = df.to_dicts()
         semantic_scores = np.array([0.9, 0.85, 0.7], dtype=np.float32)
         
         # Mode: BEST

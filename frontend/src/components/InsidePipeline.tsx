@@ -37,8 +37,12 @@ const leftPills: PillItem[] = [
     label: 'User Query',
     icon: <MessageSquare className="w-4.5 h-4.5 text-rose-400" />,
   },
-  { id: 'in-1', label: 'Taste Map', icon: <Code className="w-4.5 h-4.5 text-indigo-400" /> },
-  { id: 'in-2', label: 'Watch History', icon: <Globe className="w-4.5 h-4.5 text-purple-400" /> },
+  { id: 'in-1', label: 'Search Intent', icon: <Code className="w-4.5 h-4.5 text-indigo-400" /> },
+  {
+    id: 'in-2',
+    label: 'Favourite Movies',
+    icon: <Globe className="w-4.5 h-4.5 text-purple-400" />,
+  },
   { id: 'in-3', label: 'Mood & Context', icon: <Users className="w-4.5 h-4.5 text-blue-400" /> },
 ];
 
@@ -53,7 +57,7 @@ const rightPills: PillItem[] = [
     label: 'AI Explanations',
     icon: <FileText className="w-4.5 h-4.5 text-cyan-400" />,
   },
-  { id: 'out-2', label: 'Watchlist API', icon: <Cpu className="w-4.5 h-4.5 text-blue-400" /> },
+  { id: 'out-2', label: 'Movie Metadata', icon: <Cpu className="w-4.5 h-4.5 text-blue-400" /> },
   {
     id: 'out-3',
     label: 'Personalized Results',
@@ -71,25 +75,25 @@ interface RecommendMovie {
 
 const recommendMovies: RecommendMovie[] = [
   {
-    title: 'Interstellar',
+    title: 'Spider-Man: Brand New Day',
     poster: poster3,
     rating: '8.7',
     match: '98% Match',
-    desc: 'Matches your query for time dilation, gravity anomaly, and realistic space travel mechanics.',
+    desc: 'Perfect for viewers who enjoy action, emotional character arcs, and cinematic spectacle.',
   },
   {
-    title: 'Arrival',
+    title: 'Squid Game',
     poster: poster2,
     rating: '8.0',
     match: '94% Match',
-    desc: 'Features deep semantic translation, non-linear time structures, and first contact themes.',
+    desc: 'Ideal if you like psychological thrillers, survival stories, and intense social drama.',
   },
   {
-    title: 'Coherence',
+    title: 'Breaking Bad',
     poster: poster1,
-    rating: '7.2',
+    rating: '9.5',
     match: '91% Match',
-    desc: 'An interactive, mind-bending movie centering on quantum decoherence and character tension.',
+    desc: 'Recommended for its layered characters, grounded crime narrative, and slow-burn suspense.',
   },
 ];
 
@@ -686,7 +690,7 @@ export const InsidePipeline: React.FC = () => {
                   className="text-[11px] font-extrabold tracking-widest text-blue-100 uppercase mt-4 block"
                   style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}
                 >
-                  Core LLMs
+                  Candidate Retrieval
                 </span>
               </div>
 

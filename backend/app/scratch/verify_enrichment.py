@@ -64,7 +64,9 @@ async def main():
                 print(f"    - TMDb ID: {movie.get('tmdb_id')}")
                 print(f"    - IMDb ID: {movie.get('imdb_id')}")
                 print(f"    - Original Language: {movie.get('original_language')}")
-                print(f"    - Overview: {movie.get('overview')[:100]}...")
+                overview = movie.get('overview')
+                overview_snippet = f"{overview[:100]}..." if overview else "N/A"
+                print(f"    - Overview: {overview_snippet}")
                 print(f"    - Genres: {movie.get('genres')}")
                 print(f"    - Director: {movie.get('directors')}")
                 print(f"    - Writers: {movie.get('writers')}")

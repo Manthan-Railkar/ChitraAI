@@ -148,7 +148,7 @@ class TestDatasetMerger(unittest.TestCase):
 
     def test_merger_logic(self):
         """Verifies merging groups correctly, calculates weighted average ratings, and maps lists."""
-        merger = DatasetMerger(canonical_dir=self.temp_dir.parent, output_dir=self.temp_dir.parent)
+        merger = DatasetMerger(canonical_dir=str(self.temp_dir.parent), output_dir=str(self.temp_dir.parent))
         stats = merger.run_merging()
 
         # Load merged Parquet file

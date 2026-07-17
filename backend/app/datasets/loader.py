@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Union
 from loguru import logger
 import polars as pl
+import pandas as pd
 from app.core.config import settings
 
 def detect_compression(file_path: Path) -> Optional[str]:
@@ -65,7 +66,7 @@ def detect_encoding_and_delimiter(file_path: Path, compression: Optional[str] = 
             header = lines[0]
             candidates = [",", "\t", ";", "|"]
             counts = {c: header.count(c) for c in candidates}
-            best_candidate = max(counts, key=counts.get)
+            best_candidate = max(counts, key=lambda k: counts[k])
             if counts[best_candidate] > 0:
                 delimiter = best_candidate
     except Exception as e:
@@ -151,7 +152,7 @@ def load_file_to_polars(
             low_memory=False,
             on_bad_lines="skip"
         )
-        df = pl.from_pandas(pd_df)
+        df = pl.from_pandas(pd_df)  # type: ignore[arg-type]
         logger.debug(f"Successfully loaded {file_path.name} using Pandas fallback.")
         return df.lazy() if lazy else df
     except Exception as e:
@@ -266,7 +267,7 @@ class BaseDatasetLoader:
 
             # Retrieve schema
             schema = {}
-            if is_lazy:
+            if isinstance(frame, pl.LazyFrame):
                 schema = {name: str(dtype) for name, dtype in frame.collect_schema().items()}
                 # Smart memory footprint estimation for LazyFrame
                 row_count = load_stat.get("row_count", 0)
@@ -277,10 +278,13 @@ class BaseDatasetLoader:
                 except Exception as e:
                     logger.warning(f"Could not estimate memory size for lazy frame {file_name}: {e}")
                     estimated_memory = 0
-            else:
+            elif isinstance(frame, pl.DataFrame):
                 schema = {name: str(dtype) for name, dtype in frame.schema.items()}
                 estimated_memory = frame.estimated_size()
                 row_count = frame.height
+            else:
+                estimated_memory = 0
+                row_count = 0
 
 
             stats[file_name] = {

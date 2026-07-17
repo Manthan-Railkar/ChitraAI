@@ -63,7 +63,7 @@ class ModelManager:
                 mock_model = MagicMock()
                 mock_model.get_sentence_embedding_dimension.return_value = 768
                 mock_model.max_seq_length = 512
-                mock_model.encode = lambda texts, **kwargs: [np.zeros(768, dtype=np.float32) for _ in texts]
+                mock_model.encode = lambda texts, **kwargs: np.zeros((len(texts), 768), dtype=np.float32)
                 cls._model = mock_model
             else:
                 logger.critical(f"Failed to load SentenceTransformer model '{model_name}': {e}")

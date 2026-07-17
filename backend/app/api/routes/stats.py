@@ -38,23 +38,27 @@ async def get_stats(
     if local_engine.movies_df is None:
         local_engine.initialize()
 
+    df = local_engine.movies_df
+
     # Calculate total genres
     total_genres = 0
-    try:
-        if "genres" in local_engine.movies_df.columns:
-            total_genres = local_engine.movies_df.select("genres").explode("genres").drop_nulls().unique().height
-    except Exception:
-        pass
+    if df is not None:
+        try:
+            if "genres" in df.columns:
+                total_genres = df.select("genres").explode("genres").drop_nulls().unique().height
+        except Exception:
+            pass
 
     # Extract unique languages
     languages = ["en"]
-    try:
-        if "language" in local_engine.movies_df.columns:
-            languages = [l for l in local_engine.movies_df.select("language").drop_nulls().unique().to_series().to_list() if l]
-    except Exception:
-        pass
+    if df is not None:
+        try:
+            if "language" in df.columns:
+                languages = [l for l in df.select("language").drop_nulls().unique().to_series().to_list() if l]
+        except Exception:
+            pass
 
-    total_movies = local_engine.movies_df.height if local_engine.movies_df is not None else 0
+    total_movies = df.height if df is not None else 0
     total_embeddings = local_engine.embeddings_matrix.shape[0] if local_engine.embeddings_matrix is not None else 0
 
     return StatsResponse(

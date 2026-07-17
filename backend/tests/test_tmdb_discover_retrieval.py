@@ -5,7 +5,7 @@ from app.services.tmdb_service import TMDbService
 from app.services.recommendation_service import RecommendationService
 from app.core.config import settings
 
-class DummyTMDbService:
+class DummyTMDbService(TMDbService):
     def __init__(self):
         self.api_key = "dummy_key"
         

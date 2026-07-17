@@ -356,7 +356,7 @@ class RecommendationService:
                     # Resolve reference movie vector (from local cache if available, or encode metadata details on the fly)
                     if sim_resolved_ids:
                         for ref_id in sim_resolved_ids:
-                            if ref_id and ref_id in self.local_retrieval_engine.tmdb_id_to_idx:
+                            if ref_id and ref_id in self.local_retrieval_engine.tmdb_id_to_idx and self.local_retrieval_engine.embeddings_matrix is not None:
                                 idx = self.local_retrieval_engine.tmdb_id_to_idx[ref_id]
                                 reference_vector = self.local_retrieval_engine.embeddings_matrix[idx]
                                 logger.info(f"[Similarity Pathway] Using precomputed embedding for reference movie ID: {ref_id}")

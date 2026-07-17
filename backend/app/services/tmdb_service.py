@@ -185,7 +185,7 @@ class TMDbService:
             return None
 
         endpoint = "search/movie"
-        extra_params = {"query": title}
+        extra_params: Dict[str, Any] = {"query": title}
         if year:
             extra_params["primary_release_year"] = year
 

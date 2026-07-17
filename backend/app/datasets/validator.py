@@ -269,6 +269,7 @@ class DatasetValidator:
         credits = self.datasets.get("tmdb", {}).get("credits.csv")
         keywords = self.datasets.get("tmdb", {}).get("keywords.csv")
         links = self.datasets.get("tmdb", {}).get("links.csv")
+        numeric_meta = None
 
         if meta is not None:
             row_cnt = meta.select(pl.len()).collect().item()

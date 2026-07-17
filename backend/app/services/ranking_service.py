@@ -470,7 +470,7 @@ class RankingService:
                 collection_score = 1.0
 
             # 8. Semantic Similarity Score
-            semantic_score = float(semantic_scores[idx]) if (semantic_scores is not None and idx < len(semantic_scores)) else 0.0
+            semantic_score = semantic_scores[idx] if (semantic_scores is not None and idx < len(semantic_scores)) else 0.0
 
             # Boosted Semantic Score
             boost_sem = 0.0

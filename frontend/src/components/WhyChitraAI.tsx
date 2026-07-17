@@ -12,30 +12,29 @@ interface FeatureItem {
   desc: string;
   accent: string;
 }
-
 const features: FeatureItem[] = [
   {
     icon: <Search className="w-6 h-6 text-blue-400" />,
-    title: 'Semantic Understanding',
-    desc: 'ChitraAI understands the meaning behind your request instead of relying on exact keywords, allowing you to search naturally using emotions, themes, memories, or descriptions.',
+    title: 'Natural Conversations',
+    desc: 'Describe a mood, memory, favourite movie, scene, or even a vague feeling. ChitraAI understands your intent and helps you discover the right films without relying on rigid filters.',
     accent: 'rgba(59, 130, 246, 0.15)',
   },
   {
     icon: <Sparkles className="w-6 h-6 text-indigo-400" />,
-    title: 'AI-Powered Recommendations',
-    desc: 'Every recommendation is generated through semantic embeddings, vector search, hybrid ranking, and intelligent retrieval instead of static genre filtering.',
+    title: 'Personalised Recommendations',
+    desc: 'Every recommendation is tailored to your unique taste by combining your preferences, favourites, and search context, creating suggestions that become smarter with every interaction.',
     accent: 'rgba(99, 102, 241, 0.15)',
   },
   {
     icon: <Brain className="w-6 h-6 text-purple-400" />,
-    title: 'Rich Movie Intelligence',
-    desc: 'Built on a unified movie knowledge base enriched with IMDb, TMDb, MovieLens, and detailed plot information for deeper contextual understanding.',
+    title: 'Rich Movie Discovery',
+    desc: 'Explore a vast collection of films enriched with detailed information, ratings, genres, languages, and cinematic insights to uncover both hidden gems and timeless classics.',
     accent: 'rgba(168, 85, 247, 0.15)',
   },
   {
     icon: <Zap className="w-6 h-6 text-pink-400" />,
-    title: 'Fast & Explainable Results',
-    desc: 'Recommendations are produced within seconds and accompanied by meaningful explanations describing why each movie matches your request.',
+    title: 'Fast & Transparent Results',
+    desc: 'Receive personalised recommendations in seconds, complete with simple explanations that clearly show why each movie matches your preferences and search.',
     accent: 'rgba(236, 72, 153, 0.15)',
   },
 ];

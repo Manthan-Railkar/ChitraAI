@@ -157,7 +157,9 @@ class TestPipelineUpgrade(unittest.IsolatedAsyncioTestCase):
 
         # Mock TMDb fetch details responses
         async def fetch_details_mock(tmdb_id):
-            for m in self.local_engine.movies_df.to_dicts():
+            df = self.local_engine.movies_df
+            assert df is not None
+            for m in df.to_dicts():
                 if m["tmdb_id"] == tmdb_id:
                     # Match structure returned by TMDb API details endpoint
                     return {
@@ -225,7 +227,9 @@ class TestPipelineUpgrade(unittest.IsolatedAsyncioTestCase):
 
         # Reuse fetch_details mock
         async def fetch_details_mock(tmdb_id):
-            for m in self.local_engine.movies_df.to_dicts():
+            df = self.local_engine.movies_df
+            assert df is not None
+            for m in df.to_dicts():
                 if m["tmdb_id"] == tmdb_id:
                     return {
                         "id": tmdb_id,
@@ -311,7 +315,9 @@ class TestPipelineUpgrade(unittest.IsolatedAsyncioTestCase):
 
         # Reuse fetch_details mock
         async def fetch_details_mock(tmdb_id):
-            for m in self.local_engine.movies_df.to_dicts():
+            df = self.local_engine.movies_df
+            assert df is not None
+            for m in df.to_dicts():
                 if m["tmdb_id"] == tmdb_id:
                     return {
                         "id": tmdb_id,

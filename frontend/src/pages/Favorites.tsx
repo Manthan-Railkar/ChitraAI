@@ -69,6 +69,7 @@ export const Favorites: React.FC = () => {
 
   // ── Poster URLs ──
   const posterUrls = useMemo(() => {
+    console.log('[Favorites Page] Favourites from DB:', favourites);
     if (!user || !favourites || favourites.length === 0) {
       return FAMOUS_POSTER_URLS;
     }
@@ -80,6 +81,8 @@ export const Favorites: React.FC = () => {
         const p = f.poster_path!;
         return p.startsWith('http') ? p : `https://image.tmdb.org/t/p/w500${p}`;
       });
+
+    console.log('[Favorites Page] Parsed posterUrls for Spiral:', userPosters);
 
     // If user has fewer than 6, pad with famous posters
     if (userPosters.length < 6) {
@@ -129,7 +132,10 @@ export const Favorites: React.FC = () => {
           {/* Subtle background glow */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-rose-500/[0.03] blur-[120px] pointer-events-none" />
 
-          <div ref={textContainerRef} className="relative z-10 flex flex-col items-center lg:items-start text-center lg:text-left gap-6 max-w-[480px]">
+          <div
+            ref={textContainerRef}
+            className="relative z-10 flex flex-col items-center lg:items-start text-center lg:text-left gap-6 max-w-[480px]"
+          >
             {/* Badge */}
             <div className="anim-el inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-rose-500/20 bg-rose-500/5 backdrop-blur-md">
               <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400/30" />
