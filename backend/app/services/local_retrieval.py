@@ -1,12 +1,15 @@
 import math
 import time
 import re
+import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import polars as pl
 from loguru import logger
 from rank_bm25 import BM25Okapi
+from qdrant_client import QdrantClient, models
+from qdrant_client.models import PointStruct
 
 from app.core.config import settings
 from app.services.embedding_service import EmbeddingService
@@ -562,8 +565,171 @@ class LocalRetrievalEngine:
         
         self.processed_dir = Path(settings.PROCESSED_DATA_DIR)
         self.embeddings_dir = Path(settings.EMBEDDINGS_DIR)
+        self.qdrant_client: Optional[QdrantClient] = None
         
         logger.info("LocalRetrievalEngine created.")
+
+    def _init_qdrant(self) -> None:
+        """Initializes the Qdrant client and verifies/populates the collection."""
+        # 1. Determine if we should use local in-memory Qdrant (for tests or local development without cloud variables)
+        is_test = (
+            "pytest" in sys.modules or
+            "unittest" in sys.modules or
+            settings.EMBEDDING_MODEL == "mock-model" or
+            "mock" in settings.EMBEDDING_MODEL
+        )
+
+        if is_test or not settings.QDRANT_URL:
+            logger.info("Using local in-memory Qdrant client for testing/local development...")
+            self.qdrant_client = QdrantClient(location=":memory:")
+        else:
+            logger.info(f"Connecting to Qdrant Cloud at {settings.QDRANT_URL}...")
+            for attempt in range(1, 4):
+                try:
+                    self.qdrant_client = QdrantClient(
+                        url=settings.QDRANT_URL,
+                        api_key=settings.QDRANT_API_KEY or None,
+                        timeout=15.0
+                    )
+                    # Test connection by listing collections
+                    self.qdrant_client.get_collections()
+                    logger.info("Successfully connected to Qdrant Cloud.")
+                    break
+                except Exception as e:
+                    if attempt == 3:
+                        logger.error(f"Failed to connect to Qdrant Cloud after 3 attempts: {e}")
+                        raise e
+                    logger.warning(f"Qdrant Cloud connection failed (attempt {attempt}/3): {e}. Retrying...")
+                    time.sleep(1.0 * attempt)
+
+        # 2. Verify collection exists
+        try:
+            exists = self.qdrant_client.collection_exists(collection_name=settings.QDRANT_COLLECTION)
+        except Exception as e:
+            logger.warning(f"Error checking collection existence: {e}. Fallback to list check.")
+            try:
+                cols = self.qdrant_client.get_collections()
+                exists = any(c.name == settings.QDRANT_COLLECTION for c in cols.collections)
+            except Exception as ex:
+                logger.error(f"Failed to list collections: {ex}. Assuming collection does not exist.")
+                exists = False
+
+        if not exists:
+            logger.info(f"Collection '{settings.QDRANT_COLLECTION}' not found. Creating collection...")
+            self.qdrant_client.create_collection(
+                collection_name=settings.QDRANT_COLLECTION,
+                vectors_config=models.VectorParams(
+                    size=self.embedding_service.get_embedding_dimension(),
+                    distance=models.Distance.COSINE
+                )
+            )
+            logger.info(f"Collection '{settings.QDRANT_COLLECTION}' created successfully.")
+
+        # 3. Check if empty and upload if necessary
+        try:
+            info = self.qdrant_client.get_collection(collection_name=settings.QDRANT_COLLECTION)
+            points_count = info.points_count
+        except Exception as e:
+            logger.error(f"Failed to get collection info: {e}. Assuming empty.")
+            points_count = 0
+
+        if points_count == 0:
+            logger.info(f"Qdrant collection '{settings.QDRANT_COLLECTION}' is empty. Preparing automatic upload from local embeddings...")
+            
+            embeddings_path = self.embeddings_dir / "tmdb_embeddings.parquet"
+            if not embeddings_path.exists():
+                logger.warning(f"TMDb embeddings file not found at {embeddings_path}. Generating now locally...")
+                self._generate_embeddings(embeddings_path)
+                
+            emb_df = pl.read_parquet(embeddings_path)
+            aligned_df = self.movies_df.select(["tmdb_id"]).join(emb_df, on="tmdb_id", how="inner")
+            
+            tmdb_ids = aligned_df.select("tmdb_id").to_series().to_numpy()
+            raw_embs = np.vstack(list(aligned_df.select("embedding").to_series().to_numpy())).astype(np.float32)
+            
+            norms = np.linalg.norm(raw_embs, axis=1, keepdims=True)
+            norms = np.where(norms == 0, 1e-12, norms)
+            normalized_embs = raw_embs / norms
+            
+            batch_size = settings.QDRANT_BATCH_SIZE or 500
+            total_points = len(tmdb_ids)
+            uploaded_count = 0
+            
+            logger.info(f"Uploading {total_points} vectors to collection '{settings.QDRANT_COLLECTION}'...")
+            
+            for i in range(0, total_points, batch_size):
+                batch_ids = tmdb_ids[i:i + batch_size]
+                batch_vectors = normalized_embs[i:i + batch_size]
+                
+                # Check for existing points in this batch for resumability
+                try:
+                    existing = self.qdrant_client.retrieve(
+                        collection_name=settings.QDRANT_COLLECTION,
+                        ids=[int(tid) for tid in batch_ids],
+                        with_payload=False,
+                        with_vectors=False
+                    )
+                    existing_ids = {p.id for p in existing}
+                except Exception as e:
+                    logger.warning(f"Failed to check existing points for batch: {e}. Upserting all in batch.")
+                    existing_ids = set()
+                
+                points_to_upload = []
+                for j, tid in enumerate(batch_ids):
+                    if int(tid) not in existing_ids:
+                        points_to_upload.append(
+                            PointStruct(
+                                id=int(tid),
+                                vector=batch_vectors[j].tolist(),
+                                payload={"tmdb_id": int(tid)}
+                            )
+                        )
+                
+                if points_to_upload:
+                    # Retry logic for upserting
+                    for attempt in range(1, 4):
+                        try:
+                            self.qdrant_client.upsert(
+                                collection_name=settings.QDRANT_COLLECTION,
+                                points=points_to_upload,
+                                wait=True
+                            )
+                            uploaded_count += len(points_to_upload)
+                            logger.info(f"Uploaded batch {i//batch_size + 1}: {len(points_to_upload)} vectors. Total uploaded: {uploaded_count}/{total_points}")
+                            break
+                        except Exception as e:
+                            if attempt == 3:
+                                logger.error(f"Failed to upload batch after 3 attempts: {e}")
+                                raise e
+                            logger.warning(f"Upsert failed (attempt {attempt}/3): {e}. Retrying in {1.0 * attempt}s...")
+                            time.sleep(1.0 * attempt)
+                else:
+                    logger.debug(f"Batch {i//batch_size + 1} already exists. Skipping.")
+            
+            logger.info(f"Automatic vector upload completed. Total uploaded points: {uploaded_count}")
+        else:
+            logger.info(f"Qdrant collection '{settings.QDRANT_COLLECTION}' already contains {points_count} vectors. Skipping upload.")
+
+    def _load_local_embeddings_matrix(self) -> None:
+        """Lazy load local precomputed embeddings for fallback/test cases."""
+        logger.info("Lazy loading local precomputed embeddings...")
+        embeddings_path = self.embeddings_dir / "tmdb_embeddings.parquet"
+        if not embeddings_path.exists():
+            logger.warning(f"TMDb embeddings file not found at {embeddings_path}. Generating now locally...")
+            self._generate_embeddings(embeddings_path)
+            
+        emb_df = pl.read_parquet(embeddings_path)
+        aligned_df = self.movies_df.select(["tmdb_id"]).join(emb_df, on="tmdb_id", how="inner")
+        raw_embs = np.vstack(list(aligned_df.select("embedding").to_series().to_numpy())).astype(np.float32)
+        self.embeddings_matrix = raw_embs
+        
+        norms = np.linalg.norm(self.embeddings_matrix, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1e-12, norms)
+        self.embeddings_matrix = self.embeddings_matrix / norms
+        
+        tmdb_ids = aligned_df.select("tmdb_id").to_series().to_numpy()
+        self.tmdb_id_to_idx = {int(tid): idx for idx, tid in enumerate(tmdb_ids)}
+        logger.info("Local embeddings matrix loaded successfully.")
 
     def initialize(self) -> None:
         """Loads dataset and precomputed embeddings. Generates them if missing."""
@@ -577,32 +743,18 @@ class LocalRetrievalEngine:
         self.movies_df = pl.read_parquet(tmdb_parquet_path)
         logger.info(f"Loaded {self.movies_df.height:,} movies.")
         
-        embeddings_path = self.embeddings_dir / "tmdb_embeddings.parquet"
-        if not embeddings_path.exists():
-            logger.warning(f"TMDb embeddings file not found at {embeddings_path}. Generating now locally (takes ~2 minutes)...")
-            self._generate_embeddings(embeddings_path)
-            
-        logger.info(f"Loading TMDb precomputed embeddings from {embeddings_path}...")
-        emb_df = pl.read_parquet(embeddings_path)
-        
-        logger.info("Converting embeddings to NumPy matrix for fast cosine similarity...")
-        aligned_df = self.movies_df.select(["tmdb_id"]).join(emb_df, on="tmdb_id", how="inner")
-        
-        # 1. Extract raw embeddings efficiently without generating 17M+ python float objects
-        raw_embs = np.vstack(list(aligned_df.select("embedding").to_series().to_numpy())).astype(np.float32)
-        self.embeddings_matrix = raw_embs
-        
-        norms = np.linalg.norm(self.embeddings_matrix, axis=1, keepdims=True)
-        norms = np.where(norms == 0, 1e-12, norms)
-        self.embeddings_matrix = self.embeddings_matrix / norms
-        
-        tmdb_ids = aligned_df.select("tmdb_id").to_series().to_numpy()
-        self.tmdb_id_to_idx = {int(tid): idx for idx, tid in enumerate(tmdb_ids)}
-        
-        # Map tmdb_id to index in self.movies_df (to align BM25 indexes)
         self.tmdb_id_to_df_idx = {int(row["tmdb_id"]): idx for idx, row in enumerate(self.movies_df.select(["tmdb_id"]).to_dicts())}
         
-        # Add columns to self.movies_df to enable O(1) index slice during retrieval
+        logger.info("Reading precomputed embedding IDs to map indices...")
+        embeddings_path = self.embeddings_dir / "tmdb_embeddings.parquet"
+        if not embeddings_path.exists():
+            logger.warning(f"TMDb embeddings file not found at {embeddings_path}. Generating now locally...")
+            self._generate_embeddings(embeddings_path)
+            
+        emb_ids_df = pl.read_parquet(embeddings_path, columns=["tmdb_id"])
+        tmdb_ids = emb_ids_df.select("tmdb_id").to_series().to_numpy()
+        self.tmdb_id_to_idx = {int(tid): idx for idx, tid in enumerate(tmdb_ids)}
+        
         mapping_df = pl.DataFrame({
             "tmdb_id": pl.Series(tmdb_ids, dtype=pl.Int64),
             "embedding_idx": pl.Series(range(len(tmdb_ids)), dtype=pl.Int64)
@@ -612,14 +764,14 @@ class LocalRetrievalEngine:
         self.movies_df = self.movies_df.with_columns(df_idx_series)
         self.movies_df = self.movies_df.join(mapping_df, on="tmdb_id", how="left")
         
-        logger.info(f"LocalRetrievalEngine initialized successfully. Matrix shape: {self.embeddings_matrix.shape}")
+        # Connect and initialize Qdrant Cloud
+        self._init_qdrant()
+        
+        logger.info("LocalRetrievalEngine initialized successfully.")
         
         # Build local BM25 index once
         self._build_bm25_index()
-
-        # Explicitly release large temporary DataFrames and run garbage collection
-        del emb_df
-        del aligned_df
+        
         import gc
         gc.collect()
 
@@ -714,7 +866,7 @@ class LocalRetrievalEngine:
         Executes local structured filtering, semantic retrieval, local BM25 keyword search,
         and configurable candidate score fusion, returning Top candidate recommendations.
         """
-        if self.movies_df is None or self.embeddings_matrix is None:
+        if self.movies_df is None:
             self.initialize()
             
         t_start = time.perf_counter()
@@ -733,8 +885,7 @@ class LocalRetrievalEngine:
             self.movies_df = self.movies_df.join(mapping_df, on="tmdb_id", how="left")
 
         df = self.movies_df
-        embeddings_matrix = self.embeddings_matrix
-        if df is None or embeddings_matrix is None:
+        if df is None:
             raise ValueError("LocalRetrievalEngine failed to initialize.")
 
         # Ensure BM25 index is built (fallback for injected mock DataFrames in tests)
@@ -782,9 +933,7 @@ class LocalRetrievalEngine:
             logger.warning("No candidate movies match the query!")
             return []
 
-        # 2. Get embeddings of matching candidates directly from Polars Series
-        candidate_indices = filtered_df.select("embedding_idx").to_series().to_numpy()
-        candidate_embs = embeddings_matrix[candidate_indices]
+        candidate_ids = filtered_df.select("tmdb_id").to_series().to_list()
         
         pipeline_pathway = "funnel"
         if intent.similar_movies and intent.ranking_mode in ("similar", "similar_movie"):
@@ -794,26 +943,112 @@ class LocalRetrievalEngine:
 
         query_vector = None
         if pipeline_pathway == "similarity":
-            # Try to resolve reference movie embedding from local database
+            # Try to resolve reference movie embedding
             for ref_title in intent.similar_movies:
                 # Find matching movie in df
                 ref_df = df.filter(pl.col("title").str.to_lowercase() == ref_title.lower())
                 if ref_df.height == 0:
                     ref_df = df.filter(pl.col("title").str.to_lowercase().str.contains(ref_title.lower()))
                 if ref_df.height > 0:
-                    ref_emb_idx = ref_df.select("embedding_idx").to_series()[0]
-                    if ref_emb_idx is not None:
-                        query_vector = embeddings_matrix[ref_emb_idx]
-                        logger.info(f"[Local Similarity Engine] Using embedding of reference movie: '{ref_df.select('title').to_series()[0]}'")
-                        break
+                    ref_tmdb_id = ref_df.select("tmdb_id").to_series()[0]
+                    # Fetch from Qdrant first if available
+                    if self.qdrant_client is not None:
+                        try:
+                            points = self.qdrant_client.retrieve(
+                                collection_name=settings.QDRANT_COLLECTION,
+                                ids=[int(ref_tmdb_id)],
+                                with_vectors=True,
+                                with_payload=False
+                            )
+                            if points and points[0].vector:
+                                query_vector = np.array(points[0].vector, dtype=np.float32)
+                                logger.info(f"[Qdrant Cloud Similarity Engine] Using embedding of reference movie: '{ref_df.select('title').to_series()[0]}'")
+                                break
+                        except Exception as e:
+                            logger.warning(f"Failed to retrieve reference movie vector from Qdrant: {e}")
+                    
+                    # Fallback to local embeddings_matrix if not found/error
+                    if query_vector is None:
+                        if self.embeddings_matrix is None:
+                            self._load_local_embeddings_matrix()
+                        if self.embeddings_matrix is not None:
+                            ref_emb_idx = ref_df.select("embedding_idx").to_series()[0]
+                            if ref_emb_idx is not None:
+                                query_vector = self.embeddings_matrix[ref_emb_idx]
+                                logger.info(f"[Local Similarity Engine] Using embedding of reference movie: '{ref_df.select('title').to_series()[0]}'")
+                                break
 
         if query_vector is None:
             # 3. Embed query intent locally for semantic retrieval
             query_doc = f"{original_query}. Genres: {', '.join(intent.genres)}. Themes: {', '.join(intent.themes)}. Moods: {', '.join(intent.moods)}. Keywords: {', '.join(intent.keywords)}."
             query_vector = self.embedding_service.encode_single(query_doc, normalize=True)
         
-        # 4. Compute semantic cosine similarity locally
-        semantic_scores = SemanticSimilarityCalculator.compute_similarities(query_vector, candidate_embs)
+        # 4. Compute semantic cosine similarity
+        semantic_scores = None
+        qdrant_success = False
+        
+        if self.qdrant_client is not None:
+            # Try to query Qdrant Cloud
+            for attempt in range(1, 4):
+                try:
+                    t0 = time.perf_counter()
+                    qdrant_results = self.qdrant_client.search(
+                        collection_name=settings.QDRANT_COLLECTION,
+                        query_vector=query_vector.tolist(),
+                        query_filter=models.Filter(
+                            must=[
+                                models.HasIdCondition(has_id=[int(tid) for tid in candidate_ids])
+                            ]
+                        ),
+                        limit=len(candidate_ids),
+                        with_payload=False,
+                        with_vectors=False
+                    )
+                    scores_map = {r.id: r.score for r in qdrant_results}
+                    semantic_scores = np.array([scores_map.get(int(tid), 0.0) for tid in candidate_ids], dtype=np.float32)
+                    
+                    latency_ms = (time.perf_counter() - t0) * 1000
+                    logger.info(f"Qdrant Cloud search latency: {latency_ms:.2f}ms | Matches: {len(qdrant_results)}")
+                    qdrant_success = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Qdrant Cloud search attempt {attempt} failed: {e}")
+                    if attempt < 3:
+                        time.sleep(0.2 * attempt)
+        
+        if not qdrant_success:
+            if self.qdrant_client is not None:
+                logger.error("Qdrant Cloud search failed after 3 attempts. Falling back to local NumPy cosine similarity.")
+            
+            # Lazy load embeddings matrix if not loaded
+            if self.embeddings_matrix is None:
+                self._load_local_embeddings_matrix()
+            
+            if self.embeddings_matrix is not None:
+                # Map candidate tmdb_ids to their index in the local matrix
+                local_indices = []
+                for tid in candidate_ids:
+                    idx = self.tmdb_id_to_idx.get(int(tid))
+                    local_indices.append(idx)
+                
+                # Filter out any missing indices
+                valid_indices = [idx for idx in local_indices if idx is not None]
+                
+                if len(valid_indices) == len(candidate_ids):
+                    candidate_embs = self.embeddings_matrix[valid_indices]
+                    semantic_scores = SemanticSimilarityCalculator.compute_similarities(query_vector, candidate_embs)
+                else:
+                    semantic_scores = []
+                    for tid in candidate_ids:
+                        idx = self.tmdb_id_to_idx.get(int(tid))
+                        if idx is not None:
+                            score = float(np.dot(self.embeddings_matrix[idx], query_vector))
+                        else:
+                            score = 0.0
+                        semantic_scores.append(score)
+                    semantic_scores = np.array(semantic_scores, dtype=np.float32)
+            else:
+                raise ValueError("Both Qdrant Cloud and local embeddings matrix are unavailable.")
 
         # 5. Execute BM25 Query Processing and Search
         bm25_query_parts = []

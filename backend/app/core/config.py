@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     TMDB_API_KEY: str = ""
     OMDB_API_KEY: str = ""
     QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_API_KEY: str = ""
     QDRANT_COLLECTION: str = "movies"
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
     DEVICE: str = "cpu"
