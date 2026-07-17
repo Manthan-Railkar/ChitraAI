@@ -1,4 +1,3 @@
-/* eslint-disable react/no-unknown-property */
 import { forwardRef, useImperativeHandle, useEffect, useRef, useMemo } from 'react';
 
 import * as THREE from 'three';
@@ -11,8 +10,11 @@ import './Beams.css';
 
 function extendMaterial(BaseMaterial: any, cfg: any) {
   const physical = THREE.ShaderLib.physical;
+
   const { vertexShader: baseVert, fragmentShader: baseFrag, uniforms: baseUniforms } = physical;
-  const baseDefines = physical.defines ?? {};
+
+  const baseDefines =
+    (physical as typeof physical & { defines?: Record<string, any> }).defines ?? {};
 
   const uniforms = THREE.UniformsUtils.clone(baseUniforms);
 
@@ -44,7 +46,7 @@ function extendMaterial(BaseMaterial: any, cfg: any) {
     vertexShader: vert,
     fragmentShader: frag,
     lights: true,
-    fog: !!cfg.material?.fog
+    fog: !!cfg.material?.fog,
   });
 
   return mat;
@@ -160,7 +162,7 @@ const Beams = ({
   speed = 2,
   noiseIntensity = 1.75,
   scale = 0.2,
-  rotation = 0
+  rotation = 0,
 }: BeamsProps) => {
   const meshRef = useRef(null);
   const beamMaterial = useMemo(
@@ -198,12 +200,12 @@ const Beams = ({
         fragmentHeader: '',
         vertex: {
           '#include <begin_vertex>': `transformed.z += getPos(transformed.xyz);`,
-          '#include <beginnormal_vertex>': `objectNormal = getNormal(position.xyz);`
+          '#include <beginnormal_vertex>': `objectNormal = getNormal(position.xyz);`,
         },
         fragment: {
           '#include <dithering_fragment>': `
     float randomNoise = noise(gl_FragCoord.xy);
-    gl_FragColor.rgb -= randomNoise / 15. * uNoiseIntensity;`
+    gl_FragColor.rgb -= randomNoise / 15. * uNoiseIntensity;`,
         },
         material: { fog: true },
         uniforms: {
@@ -214,8 +216,8 @@ const Beams = ({
           uSpeed: { shared: true, mixed: true, linked: true, value: speed },
           envMapIntensity: 10,
           uNoiseIntensity: noiseIntensity,
-          uScale: scale
-        }
+          uScale: scale,
+        },
       }),
     [speed, noiseIntensity, scale]
   );
@@ -223,7 +225,13 @@ const Beams = ({
   return (
     <CanvasWrapper>
       <group rotation={[0, 0, degToRad(rotation)]}>
-        <PlaneNoise ref={meshRef} material={beamMaterial} count={beamNumber} width={beamWidth} height={beamHeight} />
+        <PlaneNoise
+          ref={meshRef}
+          material={beamMaterial}
+          count={beamNumber}
+          width={beamWidth}
+          height={beamHeight}
+        />
         <DirLight color={lightColor} position={[0, 3, 10]} />
       </group>
       <ambientLight intensity={1} />
@@ -233,7 +241,13 @@ const Beams = ({
   );
 };
 
-function createStackedPlanesBufferGeometry(n: number, width: number, height: number, spacing: number, heightSegments: number) {
+function createStackedPlanesBufferGeometry(
+  n: number,
+  width: number,
+  height: number,
+  spacing: number,
+  heightSegments: number
+) {
   const geometry = new THREE.BufferGeometry();
   const numVertices = n * (heightSegments + 1) * 2;
   const numFaces = n * heightSegments * 2;
@@ -288,22 +302,30 @@ interface MergedPlanesProps {
   height: number;
 }
 
-const MergedPlanes = forwardRef<any, MergedPlanesProps>(({ material, width, count, height }, ref) => {
-  const mesh = useRef<any>(null);
-  useImperativeHandle(ref, () => mesh.current);
-  const geometry = useMemo(
-    () => createStackedPlanesBufferGeometry(count, width, height, 0, 100),
-    [count, width, height]
-  );
-  useFrame((_, delta) => {
-    mesh.current.material.uniforms.time.value += 0.1 * delta;
-  });
-  return <mesh ref={mesh} geometry={geometry} material={material} />;
-});
+const MergedPlanes = forwardRef<any, MergedPlanesProps>(
+  ({ material, width, count, height }, ref) => {
+    const mesh = useRef<any>(null);
+    useImperativeHandle(ref, () => mesh.current);
+    const geometry = useMemo(
+      () => createStackedPlanesBufferGeometry(count, width, height, 0, 100),
+      [count, width, height]
+    );
+    useFrame((_, delta) => {
+      mesh.current.material.uniforms.time.value += 0.1 * delta;
+    });
+    return <mesh ref={mesh} geometry={geometry} material={material} />;
+  }
+);
 MergedPlanes.displayName = 'MergedPlanes';
 
 const PlaneNoise = forwardRef<any, MergedPlanesProps>((props, ref) => (
-  <MergedPlanes ref={ref} material={props.material} width={props.width} count={props.count} height={props.height} />
+  <MergedPlanes
+    ref={ref}
+    material={props.material}
+    width={props.width}
+    count={props.count}
+    height={props.height}
+  />
 ));
 PlaneNoise.displayName = 'PlaneNoise';
 
