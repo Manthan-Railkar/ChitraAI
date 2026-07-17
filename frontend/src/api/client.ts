@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
+const BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? 'http://127.0.0.1:8000/api/v1' : '/api/v1');
 
 export const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -39,15 +41,18 @@ apiClient.interceptors.response.use(
     const code = error.code;
 
     if (error.code === 'ECONNABORTED') {
-      message = 'Request timed out. Please check if the local backend server is running and try again.';
+      message =
+        'Request timed out. Please check if the local backend server is running and try again.';
     } else if (error.message === 'Network Error' || !error.response) {
-      message = 'Could not connect to the backend server. Please verify the FastAPI server is online on http://127.0.0.1:8000.';
+      message = 'Could not connect to the ChitraAI service. Please try again shortly.';
     } else if (error.response?.data?.detail) {
       if (typeof error.response.data.detail === 'string') {
         message = error.response.data.detail;
       } else if (Array.isArray(error.response.data.detail)) {
         // Parse validation errors
-        message = error.response.data.detail.map((d: any) => d.msg || d.message || JSON.stringify(d)).join(', ');
+        message = error.response.data.detail
+          .map((d: any) => d.msg || d.message || JSON.stringify(d))
+          .join(', ');
       }
     } else if (error.response?.data?.message) {
       message = error.response.data.message;
@@ -60,7 +65,6 @@ apiClient.interceptors.response.use(
       data: error.response?.data,
     };
 
-    console.error('[API ERROR]:', errorDetails);
     return Promise.reject(errorDetails);
   }
 );

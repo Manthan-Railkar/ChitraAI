@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { Suspense } from 'react';
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import AppShell from '@/layouts/AppShell';
 import LoadingScreen from '@/components/shared/LoadingScreen';
 
@@ -8,7 +8,7 @@ import LoadingScreen from '@/components/shared/LoadingScreen';
 const Home = React.lazy(() => import('@/pages/Home'));
 const Search = React.lazy(() => import('@/pages/Search'));
 const Recommendations = React.lazy(() => import('@/pages/Recommendations'));
-const Favorites = React.lazy(() => import('@/pages/Favorites'));
+const Dataset = React.lazy(() => import('@/pages/Dataset'));
 const Profile = React.lazy(() => import('@/pages/Profile'));
 const MovieDetails = React.lazy(() => import('@/pages/MovieDetails'));
 const NotFound = React.lazy(() => import('@/pages/NotFound'));
@@ -38,8 +38,12 @@ export const router = createBrowserRouter([
         element: withSuspense(Recommendations),
       },
       {
+        path: 'dataset',
+        element: withSuspense(Dataset),
+      },
+      {
         path: 'favorites',
-        element: withSuspense(Favorites),
+        element: <Navigate to="/dataset" replace />,
       },
       {
         path: 'movie/:id',

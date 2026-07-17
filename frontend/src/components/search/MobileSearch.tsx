@@ -36,6 +36,8 @@ interface MobileSearchProps {
   hasError?: boolean;
   errorMessage?: string | null;
   onRetry?: () => void;
+  guestSearchCount?: number;
+  isGuestSearchLimitReached?: boolean;
 }
 
 export const MobileSearch: React.FC<MobileSearchProps> = ({
@@ -51,6 +53,8 @@ export const MobileSearch: React.FC<MobileSearchProps> = ({
   hasError = false,
   errorMessage = '',
   onRetry,
+  guestSearchCount,
+  isGuestSearchLimitReached = false,
 }) => {
   const [input, setInput] = useState('');
   const [showChat, setShowChat] = useState(messages.length > 0);
@@ -72,7 +76,7 @@ export const MobileSearch: React.FC<MobileSearchProps> = ({
 
   // GSAP: Floating Animation for Hero Content
   useEffect(() => {
-    let ctx = gsap.context(() => {
+    const ctx = gsap.context(() => {
       if (heroRef.current && !showChat) {
         gsap.to(heroRef.current, {
           y: -10,
@@ -211,7 +215,11 @@ export const MobileSearch: React.FC<MobileSearchProps> = ({
           style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}
         >
           Discover movies <br />
-          through <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 via-purple-400 to-blue-400">meaning</span>, <br />
+          through{' '}
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 via-purple-400 to-blue-400">
+            meaning
+          </span>
+          , <br />
           not keywords.
         </h1>
 
@@ -220,7 +228,8 @@ export const MobileSearch: React.FC<MobileSearchProps> = ({
           className="text-[12px] sm:text-xs text-white/45 max-w-[280px] leading-relaxed font-medium"
           style={{ fontFamily: 'Inter, sans-serif' }}
         >
-          Describe a theme, emotional state, or storyline in natural language to search the cinematic vector space.
+          Describe a theme, emotional state, or storyline in natural language to search the
+          cinematic vector space.
         </p>
       </div>
 
@@ -257,86 +266,89 @@ export const MobileSearch: React.FC<MobileSearchProps> = ({
                   </div>
 
                   {/* Horizontal Movie Recommendations Carousel */}
-                  {!isUser && !msg.isStreaming && index === messages.length - 1 && recommendations.length > 0 && (
-                    <div className="w-full mt-4 select-none">
-                      <div className="flex items-center gap-4 overflow-x-auto py-2 px-0.5 no-scrollbar scroll-smooth snap-x snap-mandatory">
-                        {recommendations.map((movie, idx) => (
-                          <div
-                            key={idx}
-                            onClick={() => onSelectMovie(movie)}
-                            className={`w-[260px] shrink-0 snap-center rounded-2xl border p-4 flex flex-col gap-3 shadow-2xl transition-all duration-300 cursor-pointer ${
-                              activeMovie?.title === movie.title
-                                ? 'border-rose-500/40 bg-rose-500/5 shadow-[0_0_20px_rgba(244,63,94,0.05)]'
-                                : 'border-white/[0.08] bg-black/60 hover:bg-black/80'
-                            }`}
-                          >
-                            {/* Poster & Badges */}
-                            <div className="relative aspect-[16/10] rounded-xl overflow-hidden border border-white/5 shrink-0">
-                              <img
-                                src={movie.img}
-                                alt={movie.title}
-                                className="w-full h-full object-cover"
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                              <span className="absolute top-2 left-2 text-[9px] font-black uppercase tracking-widest text-rose-400 border border-rose-500/20 bg-rose-500/10 px-2 py-0.5 rounded backdrop-blur-md">
-                                {movie.match}
-                              </span>
-                              <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                                <span className="text-[10px] font-bold text-white/60 truncate max-w-[140px]">
-                                  {movie.category}
+                  {!isUser &&
+                    !msg.isStreaming &&
+                    index === messages.length - 1 &&
+                    recommendations.length > 0 && (
+                      <div className="w-full mt-4 select-none">
+                        <div className="flex items-center gap-4 overflow-x-auto py-2 px-0.5 no-scrollbar scroll-smooth snap-x snap-mandatory">
+                          {recommendations.map((movie, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => onSelectMovie(movie)}
+                              className={`w-[260px] shrink-0 snap-center rounded-2xl border p-4 flex flex-col gap-3 shadow-2xl transition-all duration-300 cursor-pointer ${
+                                activeMovie?.title === movie.title
+                                  ? 'border-rose-500/40 bg-rose-500/5 shadow-[0_0_20px_rgba(244,63,94,0.05)]'
+                                  : 'border-white/[0.08] bg-black/60 hover:bg-black/80'
+                              }`}
+                            >
+                              {/* Poster & Badges */}
+                              <div className="relative aspect-[16/10] rounded-xl overflow-hidden border border-white/5 shrink-0">
+                                <img
+                                  src={movie.img}
+                                  alt={movie.title}
+                                  className="w-full h-full object-cover"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                                <span className="absolute top-2 left-2 text-[9px] font-black uppercase tracking-widest text-rose-400 border border-rose-500/20 bg-rose-500/10 px-2 py-0.5 rounded backdrop-blur-md">
+                                  {movie.match}
                                 </span>
-                                <div className="flex items-center gap-1 text-amber-400 text-[10px] font-bold">
-                                  <Star className="w-3 h-3 fill-current" />
-                                  <span>{movie.rating}</span>
+                                <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+                                  <span className="text-[10px] font-bold text-white/60 truncate max-w-[140px]">
+                                    {movie.category}
+                                  </span>
+                                  <div className="flex items-center gap-1 text-amber-400 text-[10px] font-bold">
+                                    <Star className="w-3 h-3 fill-current" />
+                                    <span>{movie.rating}</span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
 
-                            {/* Details */}
-                            <div className="flex flex-col gap-1">
-                              <h4
-                                className="text-sm font-black text-white uppercase tracking-wide truncate"
-                                style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}
-                              >
-                                {movie.title}
-                              </h4>
-                              <div className="flex gap-2 text-[10px] text-white/40 font-semibold uppercase tracking-wider">
-                                <span>{movie.year ?? '2021'}</span>
-                                <span>•</span>
-                                <span>{movie.duration ?? '2h 10m'}</span>
+                              {/* Details */}
+                              <div className="flex flex-col gap-1">
+                                <h4
+                                  className="text-sm font-black text-white uppercase tracking-wide truncate"
+                                  style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}
+                                >
+                                  {movie.title}
+                                </h4>
+                                <div className="flex gap-2 text-[10px] text-white/40 font-semibold uppercase tracking-wider">
+                                  <span>{movie.year ?? '2021'}</span>
+                                  <span>•</span>
+                                  <span>{movie.duration ?? '2h 10m'}</span>
+                                </div>
+                                <p
+                                  className="text-[11px] text-white/50 leading-relaxed font-medium line-clamp-3 mt-1"
+                                  style={{ fontFamily: 'Inter, sans-serif' }}
+                                >
+                                  {movie.desc}
+                                </p>
                               </div>
-                              <p
-                                className="text-[11px] text-white/50 leading-relaxed font-medium line-clamp-3 mt-1"
-                                style={{ fontFamily: 'Inter, sans-serif' }}
-                              >
-                                {movie.desc}
-                              </p>
-                            </div>
 
-                            {/* Actions */}
-                            <div className="flex items-center gap-2 mt-auto pt-1">
-                              <button
-                                onClick={() => onShowDetails && onShowDetails(movie)}
-                                className="flex-grow inline-flex items-center justify-center gap-1.5 py-2 border border-white/10 bg-white/[0.03] text-white text-[10px] font-extrabold uppercase tracking-widest rounded-full hover:bg-white/[0.06] transition-all cursor-pointer active:scale-95"
-                              >
-                                <Info className="w-3.5 h-3.5" />
-                                Details
-                              </button>
-                              <FavouriteButton
-                                movieId={movie.title}
-                                title={movie.title}
-                                posterPath={movie.img}
-                                ratingValue={parseFloat(movie.rating) || null}
-                                releaseYear={movie.year ? parseInt(movie.year) : null}
-                                overview={movie.desc}
-                                size="sm"
-                              />
+                              {/* Actions */}
+                              <div className="flex items-center gap-2 mt-auto pt-1">
+                                <button
+                                  onClick={() => onShowDetails && onShowDetails(movie)}
+                                  className="flex-grow inline-flex items-center justify-center gap-1.5 py-2 border border-white/10 bg-white/[0.03] text-white text-[10px] font-extrabold uppercase tracking-widest rounded-full hover:bg-white/[0.06] transition-all cursor-pointer active:scale-95"
+                                >
+                                  <Info className="w-3.5 h-3.5" />
+                                  Details
+                                </button>
+                                <FavouriteButton
+                                  movieId={movie.title}
+                                  title={movie.title}
+                                  posterPath={movie.img}
+                                  ratingValue={parseFloat(movie.rating) || null}
+                                  releaseYear={movie.year ? parseInt(movie.year) : null}
+                                  overview={movie.desc}
+                                  size="sm"
+                                />
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
                 </div>
               );
             })}
@@ -366,7 +378,11 @@ export const MobileSearch: React.FC<MobileSearchProps> = ({
                       >
                         <span
                           className={`font-semibold tracking-wide ${
-                            isActive ? 'text-rose-400 font-bold' : isCompleted ? 'text-white/60' : 'text-white/40'
+                            isActive
+                              ? 'text-rose-400 font-bold'
+                              : isCompleted
+                                ? 'text-white/60'
+                                : 'text-white/40'
                           }`}
                           style={{ fontFamily: 'Inter, sans-serif' }}
                         >
@@ -395,7 +411,9 @@ export const MobileSearch: React.FC<MobileSearchProps> = ({
                   <AlertTriangle className="w-5 h-5" />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Search Interrupted</h4>
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                    Search Interrupted
+                  </h4>
                   <p className="text-[10px] text-white/50 leading-relaxed font-medium">
                     {errorMessage || 'Failed to communicate with local FastAPI server.'}
                   </p>
@@ -432,18 +450,29 @@ export const MobileSearch: React.FC<MobileSearchProps> = ({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={isProcessing}
-              placeholder={isProcessing ? 'AI is crawling vectors...' : 'Describe your perfect film vibe...'}
+              placeholder={
+                isGuestSearchLimitReached
+                  ? 'Free limit reached. Sign in to continue.'
+                  : isProcessing
+                    ? 'AI is crawling vectors...'
+                    : 'Describe your perfect film vibe...'
+              }
               className="flex-grow bg-transparent border-none text-xs text-white placeholder-white/30 outline-none px-4 py-2.5 disabled:opacity-50"
               style={{ fontFamily: 'Inter, sans-serif' }}
             />
             <button
               type="submit"
-              disabled={!input.trim() || isProcessing}
+              disabled={!input.trim() || isProcessing || isGuestSearchLimitReached}
               className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-white text-black hover:bg-rose-500 hover:text-white transition-all disabled:opacity-20 disabled:hover:bg-white disabled:hover:text-black cursor-pointer shadow-md select-none shrink-0"
             >
               <Send className="w-3.5 h-3.5" />
             </button>
           </div>
+          {guestSearchCount !== undefined && (
+            <p className="mt-2 text-center text-[10px] font-semibold tracking-wide text-white/35">
+              Guest Searches: {guestSearchCount} / 5
+            </p>
+          )}
         </form>
       </div>
 

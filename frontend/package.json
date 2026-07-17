@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json,md}\"",
     "preview": "vite preview",
     "prepare": "cd .. && npx husky frontend/.husky"

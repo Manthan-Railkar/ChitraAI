@@ -29,6 +29,11 @@ class AutocompleteResponse(BaseModel):
     suggestions: List[AutocompleteSuggestion] = Field(..., description="List of matching autocomplete suggestions")
 
 
+class DatasetPosterResponse(BaseModel):
+    """A randomized poster sample from the local ChitraAI movie dataset."""
+    poster_paths: List[str] = Field(..., description="Poster paths selected from the movie dataset")
+
+
 class MovieDetailResponse(BaseModel):
     """Schema representing detailed movie response containing complete metadata, poster, backdrop, and trailer URL."""
     id: str = Field(..., description="Unique movie ID string")
@@ -126,6 +131,29 @@ def get_movie_by_id(df: pl.DataFrame, movie_id: str) -> Optional[Dict[str, Any]]
             return filtered.to_dicts()[0]
             
     return None
+
+
+@router.get("/movies/dataset-posters", response_model=DatasetPosterResponse, tags=["Movie"])
+async def get_dataset_posters(
+    limit: int = Query(24, ge=6, le=48, description="Number of randomized dataset posters to return"),
+    local_engine: LocalRetrievalEngine = Depends(get_local_retrieval_engine),
+) -> DatasetPosterResponse:
+    """Returns a randomized poster sample without exposing user-specific data."""
+    if local_engine.movies_df is None:
+        local_engine.initialize()
+
+    df = local_engine.movies_df
+    if df is None or "poster_path" not in df.columns:
+        return DatasetPosterResponse(poster_paths=[])
+
+    poster_rows = df.filter(pl.col("poster_path").is_not_null() & (pl.col("poster_path") != ""))
+    if poster_rows.height == 0:
+        return DatasetPosterResponse(poster_paths=[])
+
+    sample_size = min(limit, poster_rows.height)
+    sample = poster_rows.sample(n=sample_size, with_replacement=False, shuffle=True)
+    poster_paths = [str(path) for path in sample.get_column("poster_path").to_list() if path]
+    return DatasetPosterResponse(poster_paths=poster_paths)
 
 
 @router.get("/movies/autocomplete", response_model=AutocompleteResponse, tags=["Movie"])

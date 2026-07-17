@@ -19,7 +19,11 @@ interface AuthContextValue {
   profile: UserProfile | null;
   isLoading: boolean;
   signInWithEmail: (email: string, password: string) => Promise<{ error: AuthError | null }>;
-  signUpWithEmail: (email: string, password: string, displayName?: string) => Promise<{ error: AuthError | null }>;
+  signUpWithEmail: (
+    email: string,
+    password: string,
+    displayName?: string
+  ) => Promise<{ error: AuthError | null }>;
   signInWithGoogle: () => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<{ error: string | null }>;
@@ -38,11 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Fetch profile from public.profiles
   const fetchProfile = useCallback(async (userId: string, currentUser: User) => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
 
       const googleName = currentUser.user_metadata?.full_name;
       const googleAvatar = currentUser.user_metadata?.avatar_url;
@@ -78,9 +78,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         // Profile exists. Let's see if we should sync Google metadata
         const currentProfile = data as UserProfile;
-        const isGoogleProvider = 
-          currentUser.app_metadata?.provider === 'google' || 
-          currentUser.identities?.some(id => id.provider === 'google');
+        const isGoogleProvider =
+          currentUser.app_metadata?.provider === 'google' ||
+          currentUser.identities?.some((id) => id.provider === 'google');
 
         if (isGoogleProvider && googleName && currentProfile.display_name !== googleName) {
           const { data: updatedData } = await supabase
@@ -125,18 +125,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     // Subscribe to auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, newSession) => {
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
-        if (newSession?.user) {
-          await fetchProfile(newSession.user.id, newSession.user);
-        } else {
-          setProfile(null);
-        }
-        setIsLoading(false);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      setSession(newSession);
+      setUser(newSession?.user ?? null);
+      if (newSession?.user) {
+        await fetchProfile(newSession.user.id, newSession.user);
+      } else {
+        setProfile(null);
       }
-    );
+      setIsLoading(false);
+    });
 
     return () => {
       subscription.unsubscribe();
@@ -185,10 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       // Delete profile (cascades will handle favourites via FK)
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', user.id);
+      const { error: profileError } = await supabase.from('profiles').delete().eq('id', user.id);
 
       if (profileError) {
         return { error: `Failed to delete profile: ${profileError.message}` };

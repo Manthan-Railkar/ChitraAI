@@ -1,5 +1,10 @@
 import apiClient from '@/api/client';
-import type { HealthCheckResponse, RecommendationResponse, BackendMovie } from '@/types/api';
+import type {
+  DatasetPosterResponse,
+  HealthCheckResponse,
+  RecommendationResponse,
+  BackendMovie,
+} from '@/types/api';
 
 /**
  * Helper to map backend's StandardizedMovie structure to frontend's BackendMovie structure.
@@ -115,6 +120,11 @@ export const movieService = {
     const response: any = await apiClient.get(`/movies/${movieId}`);
     const movieData = response.movie || response;
     return mapBackendMovieToFrontend(movieData);
+  },
+
+  /** Get a randomized poster sample from the application movie dataset. */
+  async getDatasetPosters(limit: number = 24): Promise<DatasetPosterResponse> {
+    return apiClient.get('/movies/dataset-posters', { params: { limit } });
   },
 };
 

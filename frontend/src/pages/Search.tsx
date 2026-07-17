@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { MainLayout } from '@/layouts/MainLayout';
 import { CinematicCanvas } from '@/components/search/CinematicCanvas';
@@ -7,6 +7,9 @@ import { MobileSearch } from '@/components/search/MobileSearch';
 import { MessageSquare, X, Star, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useHealthCheck, useRecommendations, useMovieDetails } from '@/hooks/useMovieApi';
+import { useAuth } from '@/contexts/AuthContext';
+import { GUEST_SEARCH_LIMIT, useGuestSearchLimit } from '@/hooks/useGuestSearchLimit';
+import { GuestLimitModal } from '@/components/search/GuestLimitModal';
 
 // Import movie posters for fallback images
 import poster1 from '@/assets/posters/poster1.png';
@@ -43,11 +46,19 @@ export const Search: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [showGuestLimitModal, setShowGuestLimitModal] = useState(false);
+  const [searchRequestId, setSearchRequestId] = useState(0);
+  const searchRequestIdRef = useRef(0);
+  const guestRequestCounts = useRef(new Map<number, number>());
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const { guestSearchCount, isGuestSearchLimitReached, recordSuccessfulGuestSearch } =
+    useGuestSearchLimit();
+  const isGuestLimitActive = !isAuthLoading && !user && isGuestSearchLimitReached;
 
   // API Integration States
   const [searchQuery, setSearchQuery] = useState('');
   const [apiError, setApiError] = useState<string | null>(null);
-  
+
   // Movie Details Modal State
   const [detailMovieId, setDetailMovieId] = useState<string | null>(null);
 
@@ -71,22 +82,32 @@ export const Search: React.FC = () => {
   // Warn user once if backend is offline
   useEffect(() => {
     if (isBackendOffline) {
-      toast.error('ChitraAI Backend is offline. Please start the FastAPI server on http://127.0.0.1:8000.', {
+      toast.error('ChitraAI service is currently unavailable. Please try again shortly.', {
         id: 'backend-offline-toast',
       });
     }
   }, [isBackendOffline]);
 
   // 2. Recommendations Query Hook
-  const { data: recData, error: recError, isFetching: isRecFetching } = useRecommendations(searchQuery, 3, {
-    enabled: !!searchQuery,
-  });
+  const {
+    data: recData,
+    error: recError,
+    isFetching: isRecFetching,
+  } = useRecommendations(
+    searchQuery,
+    3,
+    {
+      enabled: !!searchQuery && !isAuthLoading && (Boolean(user) || !isGuestLimitActive),
+    },
+    searchRequestId
+  );
 
   // 3. Movie Details Query Hook
-  const { data: detailData, isFetching: isDetailFetching, error: detailError } = useMovieDetails(
-    detailMovieId || '',
-    { enabled: !!detailMovieId }
-  );
+  const {
+    data: detailData,
+    isFetching: isDetailFetching,
+    error: detailError,
+  } = useMovieDetails(detailMovieId || '', { enabled: !!detailMovieId });
 
   // Handle Query Loading state
   useEffect(() => {
@@ -100,24 +121,38 @@ export const Search: React.FC = () => {
   // Handle Query Error state
   useEffect(() => {
     if (recError) {
-      const errMsg = recError.message || 'An error occurred while communicating with the local FastAPI server.';
+      guestRequestCounts.current.delete(searchRequestId);
+      const errMsg =
+        recError.message || 'An error occurred while communicating with the local FastAPI server.';
       setApiError(errMsg);
       setIsProcessing(false);
       setCanvasState('idle');
       toast.error(errMsg, { id: 'search-error-toast' });
     }
-  }, [recError]);
+  }, [recError, searchRequestId]);
 
   // Handle Query Success state and AI response text streaming
   useEffect(() => {
     if (recData) {
+      const guestSearchCountAtRequest = guestRequestCounts.current.get(searchRequestId);
+      if (guestSearchCountAtRequest !== undefined) {
+        guestRequestCounts.current.delete(searchRequestId);
+        const hasReachedFinalGuestSearch = guestSearchCountAtRequest >= GUEST_SEARCH_LIMIT - 1;
+        recordSuccessfulGuestSearch();
+        if (hasReachedFinalGuestSearch) {
+          setShowGuestLimitModal(true);
+        }
+      }
+
       if (!recData.results || recData.results.length === 0) {
         setRecommendations([]);
         setActiveMovie(null);
         setCanvasState('idle');
         setIsProcessing(false);
         setSearchQuery('');
-        toast.info('No semantic matches found. Try describing your vibe in different terms.', { id: 'no-matches-toast' });
+        toast.info('No semantic matches found. Try describing your vibe in different terms.', {
+          id: 'no-matches-toast',
+        });
         return;
       }
 
@@ -126,19 +161,22 @@ export const Search: React.FC = () => {
         // Pick a fallback poster if TMDB poster is missing
         const fallbackPosters = [poster1, poster2, poster3, poster4, poster5, poster6];
         const localFallback = fallbackPosters[idx % fallbackPosters.length];
-        
+
         return {
           id: m.id,
           title: m.title,
           category: m.genres && m.genres.length > 0 ? m.genres.slice(0, 2).join(' • ') : 'Movie',
           img: m.poster_path
-            ? (m.poster_path.startsWith('http')
+            ? m.poster_path.startsWith('http')
               ? m.poster_path
-              : `https://image.tmdb.org/t/p/w500${m.poster_path}`)
+              : `https://image.tmdb.org/t/p/w500${m.poster_path}`
             : localFallback,
           rating: m.rating_value ? String(m.rating_value) : '7.8',
           match: m.reranked_score ? `${Math.round(m.reranked_score * 100)}% Match` : '92% Match',
-          desc: m.recommendation_reason || m.overview || 'Highly matching title from our semantic index.',
+          desc:
+            m.recommendation_reason ||
+            m.overview ||
+            'Highly matching title from our semantic index.',
           year: m.release_year ? String(m.release_year) : '2021',
           duration: m.runtime_minutes ? `${m.runtime_minutes}m` : '2h',
           trailerUrl: m.trailer_url ? m.trailer_url.replace('watch?v=', 'embed/') : undefined,
@@ -153,7 +191,7 @@ export const Search: React.FC = () => {
       const themes = recData.understanding?.themes || [];
       const genres = recData.understanding?.genres || [];
       let responseIntro = 'Processed semantic match for your request. ';
-      
+
       if (themes.length > 0 || genres.length > 0) {
         const themePart = themes.length > 0 ? `themes like "${themes.slice(0, 3).join(', ')}"` : '';
         const genrePart = genres.length > 0 ? `genres like "${genres.slice(0, 2).join(', ')}"` : '';
@@ -195,18 +233,33 @@ export const Search: React.FC = () => {
         }
       }, 20);
     }
-  }, [recData]);
+  }, [recData, recordSuccessfulGuestSearch, searchRequestId]);
 
   const handleSendMessage = (text: string) => {
     if (isProcessing) return;
 
+    if (isAuthLoading) return;
+
+    if (isGuestLimitActive) {
+      setShowGuestLimitModal(true);
+      return;
+    }
+
     if (isBackendOffline) {
-      toast.error('Cannot submit query. The local FastAPI server is offline.', { id: 'backend-offline-submit' });
+      toast.error('Cannot submit query. The local FastAPI server is offline.', {
+        id: 'backend-offline-submit',
+      });
       return;
     }
 
     setApiError(null);
     setMessages((prev) => [...prev, { sender: 'user', text }]);
+    const nextRequestId = searchRequestIdRef.current + 1;
+    searchRequestIdRef.current = nextRequestId;
+    if (!user) {
+      guestRequestCounts.current.set(nextRequestId, guestSearchCount);
+    }
+    setSearchRequestId(nextRequestId);
     setSearchQuery(text);
   };
 
@@ -220,10 +273,23 @@ export const Search: React.FC = () => {
   };
 
   const handleRetry = () => {
+    if (isAuthLoading) return;
+
+    if (isGuestLimitActive) {
+      setShowGuestLimitModal(true);
+      return;
+    }
+
     const userMessages = messages.filter((m) => m.sender === 'user');
     if (userMessages.length > 0) {
       const lastText = userMessages[userMessages.length - 1].text;
       setApiError(null);
+      const nextRequestId = searchRequestIdRef.current + 1;
+      searchRequestIdRef.current = nextRequestId;
+      if (!user) {
+        guestRequestCounts.current.set(nextRequestId, guestSearchCount);
+      }
+      setSearchRequestId(nextRequestId);
       setSearchQuery(lastText);
     }
   };
@@ -245,6 +311,8 @@ export const Search: React.FC = () => {
             hasError={!!apiError}
             errorMessage={apiError}
             onRetry={handleRetry}
+            guestSearchCount={user ? undefined : guestSearchCount}
+            isGuestSearchLimitReached={isGuestLimitActive}
           />,
           document.body
         )
@@ -298,6 +366,8 @@ export const Search: React.FC = () => {
               isProcessing={isProcessing}
               onClearChat={handleClearChat}
               onToggleCollapse={() => setIsChatCollapsed(true)}
+              guestSearchCount={user ? undefined : guestSearchCount}
+              isGuestSearchLimitReached={isGuestLimitActive}
             />
           </div>
         </div>
@@ -307,7 +377,6 @@ export const Search: React.FC = () => {
       {detailMovieId && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
           <div className="relative w-full max-w-[650px] rounded-3xl border border-white/[0.08] bg-zinc-950/95 backdrop-blur-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-            
             {/* Backdrop Area */}
             <div className="relative h-[200px] sm:h-[240px] w-full shrink-0 overflow-hidden">
               {isDetailFetching ? (
@@ -326,7 +395,7 @@ export const Search: React.FC = () => {
               ) : (
                 <div className="w-full h-full bg-gradient-to-t from-zinc-950 to-zinc-900/50" />
               )}
-              
+
               {/* Close Button */}
               <button
                 onClick={() => setDetailMovieId(null)}
@@ -341,12 +410,16 @@ export const Search: React.FC = () => {
               {isDetailFetching ? (
                 <div className="flex flex-col gap-4 py-12 items-center justify-center">
                   <div className="w-8 h-8 rounded-full border border-rose-500/50 border-t-transparent animate-spin" />
-                  <span className="text-xs text-white/50 font-medium">Fetching details from TMDb...</span>
+                  <span className="text-xs text-white/50 font-medium">
+                    Fetching details from TMDb...
+                  </span>
                 </div>
               ) : detailError ? (
                 <div className="flex flex-col gap-3 py-12 items-center justify-center text-center">
                   <AlertTriangle className="w-8 h-8 text-rose-500" />
-                  <span className="text-xs text-white/60 font-medium">Failed to load movie details.</span>
+                  <span className="text-xs text-white/60 font-medium">
+                    Failed to load movie details.
+                  </span>
                   <button
                     onClick={() => setDetailMovieId(null)}
                     className="mt-2 px-4 py-1.5 bg-white/10 text-white rounded-full text-xs font-bold"
@@ -356,7 +429,6 @@ export const Search: React.FC = () => {
                 </div>
               ) : detailData ? (
                 <div className="flex flex-col gap-6 text-white">
-                  
                   {/* Title and Poster Card */}
                   <div className="flex flex-col sm:flex-row gap-5 items-start">
                     <div className="w-[100px] aspect-[2/3] rounded-xl overflow-hidden shadow-lg border border-white/10 shrink-0 bg-zinc-900">
@@ -374,12 +446,13 @@ export const Search: React.FC = () => {
                       <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-none">
                         {detailData.title}
                       </h3>
-                      {detailData.original_title && detailData.original_title !== detailData.title && (
-                        <p className="text-xs text-white/40 font-semibold uppercase tracking-wider -mt-1">
-                          Original: {detailData.original_title}
-                        </p>
-                      )}
-                      
+                      {detailData.original_title &&
+                        detailData.original_title !== detailData.title && (
+                          <p className="text-xs text-white/40 font-semibold uppercase tracking-wider -mt-1">
+                            Original: {detailData.original_title}
+                          </p>
+                        )}
+
                       {/* Genres, Duration, Year */}
                       <div className="flex flex-wrap items-center gap-3 text-xs text-white/50 font-medium pt-1">
                         {detailData.genres && detailData.genres.length > 0 && (
@@ -472,13 +545,15 @@ export const Search: React.FC = () => {
                       </span>
                     </div>
                   )}
-
                 </div>
               ) : null}
             </div>
-
           </div>
         </div>
+      )}
+
+      {showGuestLimitModal && !user && (
+        <GuestLimitModal onClose={() => setShowGuestLimitModal(false)} />
       )}
     </MainLayout>
   );

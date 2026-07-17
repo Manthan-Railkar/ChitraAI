@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { LightRays } from '@/components/reactbits/LightRays';
 import { Footer } from '@/components/Footer';
-import { Moon, ArrowUpRight, Menu, X } from 'lucide-react';
+import { ArrowUpRight, Menu, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Lenis from 'lenis';
 import { gsap } from 'gsap';
@@ -46,13 +46,13 @@ export const AppShell: React.FC = () => {
   const navItems = [
     { path: '/', label: 'Home' },
     { path: '/search', label: 'Product' },
-    { path: '/favorites', label: 'Favorites' },
+    { path: '/dataset', label: 'Dataset' },
   ];
 
   return (
     <div className="min-h-screen bg-black text-foreground flex flex-col font-sans select-none relative overflow-x-hidden">
       {/* WebGL Light Rays background covering the entire screen with exact user props */}
-      {location.pathname !== '/search' && location.pathname !== '/favorites' && (
+      {location.pathname !== '/search' && location.pathname !== '/dataset' && (
         <div className="fixed inset-0 pointer-events-none overflow-hidden select-none z-0">
           <LightRays
             raysOrigin="top-center"
@@ -187,7 +187,7 @@ export const AppShell: React.FC = () => {
                   to="/profile"
                   className="w-full text-center py-2.5 rounded-full border border-white/10 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-white transition-colors cursor-pointer"
                 >
-                  {user ? (profile?.display_name || 'My Account') : 'Sign In'}
+                  {user ? profile?.display_name || 'My Account' : 'Sign In'}
                 </Link>
                 <Link
                   to="/search"

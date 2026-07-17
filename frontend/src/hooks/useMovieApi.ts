@@ -1,6 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import movieService from '@/services/movieService';
-import type { HealthCheckResponse, RecommendationResponse, BackendMovie } from '@/types/api';
+import type {
+  DatasetPosterResponse,
+  HealthCheckResponse,
+  RecommendationResponse,
+  BackendMovie,
+} from '@/types/api';
 import type { ApiError } from '@/api/client';
 
 export const useHealthCheck = (options?: { enabled?: boolean; refetchInterval?: number }) => {
@@ -15,10 +20,11 @@ export const useHealthCheck = (options?: { enabled?: boolean; refetchInterval?: 
 export const useRecommendations = (
   q: string,
   limit: number = 10,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean },
+  requestId: number = 0
 ) => {
   return useQuery<RecommendationResponse, ApiError>({
-    queryKey: ['recommendations', q, limit],
+    queryKey: ['recommendations', q, limit, requestId],
     queryFn: () => movieService.getRecommendations(q, limit),
     retry: 1,
     ...options,
@@ -38,10 +44,14 @@ export const useSimilarMovies = (
   });
 };
 
-export const useMovieDetails = (
-  movieId: string,
-  options?: { enabled?: boolean }
-) => {
+export const useDatasetPosters = (limit: number = 24) => {
+  return useQuery<DatasetPosterResponse, ApiError>({
+    queryKey: ['dataset-posters', limit],
+    queryFn: () => movieService.getDatasetPosters(limit),
+  });
+};
+
+export const useMovieDetails = (movieId: string, options?: { enabled?: boolean }) => {
   return useQuery<BackendMovie, ApiError>({
     queryKey: ['movie-details', movieId],
     queryFn: () => movieService.getMovieDetails(movieId),

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
     DEVICE: str = "cpu"
     LOG_LEVEL: str = "INFO"
+    CORS_ORIGINS: str = ""
 
     # Dataset Directories
     RAW_DATA_DIR: str = str(BASE_DIR / "app" / "datasets" / "raw")

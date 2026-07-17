@@ -68,3 +68,7 @@ export interface HealthCheckResponse {
     log_level: string;
   };
 }
+
+export interface DatasetPosterResponse {
+  poster_paths: string[];
+}

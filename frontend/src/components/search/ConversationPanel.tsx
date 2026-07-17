@@ -14,6 +14,8 @@ interface ConversationPanelProps {
   isProcessing: boolean;
   onClearChat: () => void;
   onToggleCollapse: () => void;
+  guestSearchCount?: number;
+  isGuestSearchLimitReached?: boolean;
 }
 
 export const ConversationPanel: React.FC<ConversationPanelProps> = ({
@@ -22,6 +24,8 @@ export const ConversationPanel: React.FC<ConversationPanelProps> = ({
   isProcessing,
   onClearChat,
   onToggleCollapse,
+  guestSearchCount,
+  isGuestSearchLimitReached = false,
 }) => {
   const [input, setInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -195,19 +199,28 @@ export const ConversationPanel: React.FC<ConversationPanelProps> = ({
               onChange={(e) => setInput(e.target.value)}
               disabled={isProcessing}
               placeholder={
-                isProcessing ? 'AI is processing...' : 'Describe your perfect film vibe...'
+                isGuestSearchLimitReached
+                  ? 'Free limit reached. Sign in to continue.'
+                  : isProcessing
+                    ? 'AI is processing...'
+                    : 'Describe your perfect film vibe...'
               }
               className="flex-grow bg-transparent border-none text-xs text-white placeholder-white/30 outline-none px-3.5 py-2.5 disabled:opacity-50"
               style={{ fontFamily: 'Inter, sans-serif' }}
             />
             <button
               type="submit"
-              disabled={!input.trim() || isProcessing}
+              disabled={!input.trim() || isProcessing || isGuestSearchLimitReached}
               className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white text-black hover:bg-rose-500 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-black cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
             </button>
           </div>
+          {guestSearchCount !== undefined && (
+            <p className="mt-2 text-center text-[10px] font-semibold tracking-wide text-white/35">
+              Guest Searches: {guestSearchCount} / 5
+            </p>
+          )}
         </div>
       </form>
     </div>
