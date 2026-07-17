@@ -55,10 +55,14 @@ logs/
 
 # ChitraAI Specific - Data, Caches, & Embeddings
 backend/app/datasets/raw/
-backend/app/datasets/processed/
+backend/app/datasets/processed/*
+!backend/app/datasets/processed/canonical/
+backend/app/datasets/processed/canonical/*
+!backend/app/datasets/processed/canonical/tmdb_canonical.parquet
 backend/app/datasets/merged/
 backend/app/datasets/cache/
-backend/app/embeddings/
+backend/app/embeddings/*
+!backend/app/embeddings/tmdb_embeddings.parquet
 backend/app/vector_db/qdrant_local/
 
 # OS files
