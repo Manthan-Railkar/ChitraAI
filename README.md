@@ -9,8 +9,7 @@
 
 ChitraAI is a state-of-the-art, AI-powered semantic movie recommendation system. By leveraging natural language processing (NLP), vector search, and hybrid candidate ranking, ChitraAI allows users to discover movies using complex, conversational queries like *"show me gritty cyberpunk thrillers similar to Blade Runner with deep philosophical themes"* instead of basic keyword searches.
 
-* **Live Frontend Demo**: [https://chitra-ai-eight.vercel.app/](https://chitra-ai-eight.vercel.app/)
-* **Live Backend API**: [https://chitra-ai-backend.onrender.com/](https://chitra-ai-backend.onrender.com/)
+
 
 ---
 
