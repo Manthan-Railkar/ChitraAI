@@ -64,6 +64,9 @@ Create a `.env` file in the `backend/` directory:
 
 ## 🚀 Installation & Local Setup
 
+> [!NOTE]
+> The repository comes pre-packaged with all required datasets (`app/datasets/processed/canonical/`) and precomputed embeddings (`app/embeddings/`). You do **not** need to regenerate embeddings or set up Qdrant Cloud to run the application locally. If Qdrant settings are omitted in `.env`, the server automatically defaults to the Local Retrieval Engine.
+
 ### 1. Prerequisites
 * Python 3.10 to 3.13
 * Virtual environment (venv or conda)

@@ -187,6 +187,9 @@ ChitraAI/
 
 ## Setup Instructions
 
+> [!NOTE]
+> The repository comes pre-packaged with all required datasets (`app/datasets/processed/canonical/`) and precomputed embeddings (`app/embeddings/`). You do **not** need to regenerate embeddings to run the application locally.
+
 <details>
 <summary><b>1. Backend Setup (Local)</b></summary>
 
@@ -210,8 +213,8 @@ ChitraAI/
    ```bash
    cp .env.example .env
    ```
-   *(Fill in your `TMDB_API_KEY`, `GROQ_API_KEY`, `QDRANT_URL`, and `QDRANT_API_KEY`)*
-5. Run the one-time dataset ingestion script to populate Qdrant Cloud (ensure embeddings are generated):
+   *(Fill in your `TMDB_API_KEY` and `GROQ_API_KEY` or `OPENAI_API_KEY` for LLM capabilities. If you do not fill in `QDRANT_URL` or `QDRANT_API_KEY`, the server will automatically default to the **Local Retrieval Engine** utilizing local in-memory embeddings).*
+5. **(Optional)** Run the dataset ingestion script to populate Qdrant Cloud (if you prefer using hosted vector search instead of the local fallback):
    ```bash
    python app/scripts/ingest_to_qdrant.py
    ```
