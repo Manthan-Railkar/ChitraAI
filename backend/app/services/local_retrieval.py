@@ -589,7 +589,7 @@ class LocalRetrievalEngine:
                     self.qdrant_client = QdrantClient(
                         url=settings.QDRANT_URL,
                         api_key=settings.QDRANT_API_KEY or None,
-                        timeout=15.0
+                        timeout=15
                     )
                     # Test connection by listing collections
                     self.qdrant_client.get_collections()

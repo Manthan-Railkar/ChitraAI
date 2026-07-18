@@ -29,7 +29,7 @@ def main():
         qdrant_client = QdrantClient(
             url=settings.QDRANT_URL,
             api_key=settings.QDRANT_API_KEY or None,
-            timeout=30.0
+            timeout=30
         )
         qdrant_client.get_collections()
         logger.info("Successfully connected to Qdrant.")
