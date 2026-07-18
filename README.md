@@ -46,58 +46,76 @@ ChitraAI is a state-of-the-art, AI-powered semantic movie recommendation system.
 
 ## Architecture & Process Flow
 
-ChitraAI splits its logic between a client-side application (React + Vite) and a memory-optimized FastAPI backend. 
+ChitraAI splits its logic between a client-side web application (React + Vite) and a memory-optimized FastAPI backend. It is designed to be highly resilient, using external cloud services as the primary path and local in-memory engines as fallbacks.
 
 ### High-Level System Architecture
 ```mermaid
-graph LR
+graph TD
     subgraph "Frontend Client (Vercel)"
-        UI[React / Vite Web App]
-        SupaSDK[Supabase Client SDK]
+        UI["React / Vite Web App"]
+        SupaSDK["Supabase Client SDK"]
     end
 
     subgraph "Backend Server (Render)"
-        API[FastAPI Router]
-        LocalRet[Local Retrieval Engine]
-        EmbSrv[Embedding Service]
-        QdrantClient[Qdrant Client]
+        API["FastAPI Router"]
+        LocalRet["Local Retrieval Engine (Polars & Embeddings)"]
+        EmbSrv["Embedding Service (MiniLM)"]
     end
 
-    subgraph "External Cloud Services"
-        Supabase[(Supabase Auth & DB)]
-        QdrantCloud[(Qdrant Cloud Vector DB)]
-        TMDb[(TMDb Movie API)]
-        Groq[Groq API - LLM Inference]
+    subgraph "External Cloud Services (Primary)"
+        Supabase[("Supabase Auth & DB")]
+        QdrantCloud[("Qdrant Cloud (Vector Search)")]
+        TMDb[("TMDb API (Live Metadata)")]
+        Groq["Groq API (AI Intent/Explanations)"]
     end
 
     UI <-->|HTTPS / JSON| API
-    UI <-->|Auth / Favorites| Supabase
-    API -->|Generate Query Vector| EmbSrv
-    API -->|Fetch Posters & Cast| TMDb
-    API -->|Intent / Explanations| Groq
-    LocalRet -->|Hybrid Filtering| API
-    QdrantClient <-->|Cosine Search| QdrantCloud
-    API <-->|Query Vector Database| QdrantClient
+    UI <-->|Auth & Watchlist| Supabase
+    API -->|1. Understand Query| Groq
+    API -->|2. Generate Embeddings| EmbSrv
+    API -->|3. Search Vectors| QdrantCloud
+    API -->|4. Enrich Details| TMDb
+
+    %% Fallback routes
+    API -.->|Local Intent Fallback| API
+    API -.->|Local Database & Vector Search Fallback| LocalRet
 ```
 
 ### Recommendation Pipeline Flow
-The following sequence details how a query gets converted into a set of recommendations:
+The following flowchart shows exactly how a user query is processed. The pipeline uses **bypasses** for simple queries and **fallbacks** if external cloud APIs are unavailable:
 
 ```mermaid
 graph TD
-    User([User Prompt]) --> Frontend[Vercel UI]
-    Frontend -->|HTTP API Request| Backend[FastAPI Backend - Render]
-    Backend --> Intent[LLM Intent Extractor - Groq Llama-3.1]
-    Intent -->|Structured Output| StructIntent[Structured Intent: Genres, Actors, Moods, etc.]
-    StructIntent --> Embed[Embedding Service - MiniLM-L6-v2]
-    Embed -->|Query Embedding| Qdrant[Hosted Qdrant Cloud]
-    Qdrant -->|Semantic Search Candidates| Fusion[Hybrid Fusion Engine]
-    StructIntent -->|Lexical & Metadata Matching| BM25[BM25 Engine + Polars Filter]
-    BM25 -->|BM25 Matches| Fusion
-    Fusion -->|Hybrid Recs Weighted Score| Metadata[Metadata Filter / Deduplication]
-    Metadata --> TMDb[TMDb API Enrichment]
-    TMDb -->|Movie Details, Posters, Trailer| Explain[AI Explanation Generator - Groq]
-    Explain -->|Enriched Recs + Explanations| Frontend
+    User([User Query]) --> UI[Vercel UI]
+    UI -->|HTTP Request| Backend[FastAPI Backend]
+    
+    %% Cache & Shortcut Checks
+    Backend --> Cache{In Cache?}
+    Cache -- Yes --> ReturnCache[Return Cached Response]
+    Cache -- No --> Shortcut{Is Direct Shortcut?}
+    
+    Shortcut -- Exact Movie Title --> LookupBypass[Bypass AI: Direct Movie Search]
+    Shortcut -- Person Name e.g. 'films by Nolan' --> PersonBypass[Bypass AI: Direct Director/Actor Filter]
+    Shortcut -- Simple Genre Word --> HeuristicBypass[Bypass AI: Local Regex Genre Match]
+    
+    %% Intent Extraction
+    Shortcut -- General Query --> IntentExtractor{Understand Query}
+    IntentExtractor -- Primary Path --> LLM[AI Intent Extraction - Groq/OpenAI]
+    LLM -- Fail / Invalid JSON --> HeuristicFallback[Fallback: Local Regex Parser]
+    
+    %% Candidate Retrieval
+    LookupBypass & PersonBypass & HeuristicBypass & LLM & HeuristicFallback --> ThemeExpansion[Theme & Keyword Expansion]
+    ThemeExpansion --> Retrieval{Retrieve Movies}
+    
+    Retrieval -- Primary Path --> TMDbDiscover[TMDb Discover API + Qdrant Cloud]
+    TMDbDiscover -- Fail / 0 Results --> LocalEngine[Fallback: Local Parquet DB + Local Embedding Matrix]
+    Retrieval -- TMDb Disabled --> LocalEngine
+    
+    %% Ranking & Enrichment
+    TMDbDiscover & LocalEngine --> SmartRanking[Smart Ranking & Diversity Filter]
+    SmartRanking --> Enrichment[TMDb Live Enrichment - Posters & Trailers]
+    Enrichment --> Explanations[AI Explanation Generator - Groq]
+    Explanations --> UI
 ```
 
 ---
@@ -249,12 +267,22 @@ ChitraAI/
 
 ## Recommendation Pipeline
 
-The recommendation pipeline runs in four stages:
+The recommendation pipeline runs through these stages, optimized for speed and resilience:
 
-1. **Query Deconstruction**: The conversational search string is fed to a Groq LLM instance. The LLM produces a structured JSON output classifying genres, target decades, key actors, themes, and emotional tone.
-2. **Dense Vector Search**: The text embedding model (`all-MiniLM-L6-v2`) encodes the search criteria. The resulting vector queries the hosted Qdrant Cloud database using cosine similarity to return the top 1,000 nearest semantic candidates.
-3. **Lexical & Metadata Reciprocal Rank Fusion (RRF)**: A BM25 index built from movie plots is queried for keyword matches. Polars fuses semantic similarity scores, lexical scores, movie ratings, and popularity curves using reciprocal rank fusion to produce the top 20 ranked candidates.
-4. **Contextual Explanation & Enrichment**: The backend hits the TMDb API to pull live images, genres, ratings, and video links. It then invokes Groq to compare the structured query profile against the movie plots, generating human-readable explanations of why each movie fits.
+1. **Pre-Checks & AI Bypass**:
+   * **Request Cache**: Matches duplicate queries instantly.
+   * **Bypasses**: Skips the AI for direct movie titles (exact or fuzzy matches), person-centric filmography queries (e.g., *"movies by Nolan"*), and extremely simple genre queries.
+2. **Query Understanding**:
+   * **Primary**: Uses a high-performance **Groq/OpenAI LLM** to analyze the request and extract structured parameters (genres, actors, themes, tone).
+   * **Fallback**: If the LLM call fails or times out, a **Local Regex Heuristics Parser** steps in to extract basic parameters locally.
+3. **Theme Expansion**:
+   * Expands query words (e.g., *"mind-bending"*) into standard movie genres and plot keywords using a static expansion mapping.
+4. **Candidate Retrieval**:
+   * **Primary**: Queries the **TMDb API** (discover endpoint) combined with vector search against **Qdrant Cloud** (running cosine similarity on embeddings generated by `all-MiniLM-L6-v2`).
+   * **Fallback**: If the online services are unavailable or return empty lists, the backend queries the **Local Polars Database** (canonical dataset parquet) and matches against the offline **Local Embeddings Matrix**.
+5. **Ranking & Enrichment**:
+   * Candidates are combined and ranked using BM25 lexical relevance, semantic vector similarity, and metadata weights (popularity, release year, rating).
+   * Top candidates are enriched with live metadata (posters, cast details, trailers) and context-aware natural language explanations before being returned to the user.
 
 ---
 

@@ -6,20 +6,21 @@ ChitraAI is a production-grade, AI-powered semantic movie recommendation system.
 
 ## 🏗 System Architecture Overview
 
-The backend uses a local hybrid retrieval architecture, eliminating external database dependencies (e.g. Qdrant) for fast, lightweight in-memory searching:
+The backend is built around a highly resilient dual-pathway retrieval system, employing online cloud services as the primary engine and local, in-memory datasets as self-contained fallbacks:
 
-1. **Query Parsing & Intent Extraction (NLU)**:
-   * Translates natural language user requests into structured search constraints (preferred/avoided genres, actors, directors, moods, themes, years, runtimes) using **OpenAI's Structured Output API**.
-2. **Local Hard Filtering**:
-   * Uses highly optimized **Polars LazyFrames** to filter the 45,433 canonical movies based on hard year, runtime, language, and genre exclusion boundaries.
-3. **Local Hybrid Retrieval**:
-   * **Semantic Search**: Computes local cosine similarity between the query embedding and precomputed movie embeddings matrix using vectorized NumPy dot products.
-   * **BM25 Keyword Search**: Evaluates exact keyword matches using a memory-resident `rank-bm25` Okapi index built over title, taglines, keywords, cast, directors, and Wikipedia plot summaries.
-   * **Metadata Jaccard Match**: Calculates Jaccard overlap on categorical preferences.
-4. **Vectorized Fusion & Reranking**:
-   * Scores are combined via Polars expressions (55% Semantic + 25% BM25 + 20% Metadata) to isolate the top candidate pool.
-5. **Weighted Reranking & Enrichment**:
-   * The candidate pool is reranked by the `WeightedScorer` combining popularity, rating, cast/director boosts, and semantic relevance, followed by real-time concurrency-throttled TMDb API details enrichment (posters, certifications, streaming providers).
+1. **Query Routing & Intent Parsing**:
+   * **Bypasses**: Instantly bypasses the LLM for direct movie titles, person search shortcuts (e.g., *"films by Nolan"*), or simple genre words.
+   * **Primary Intent extraction**: Deconstructs conversational queries into structured parameters using LLM-based structured JSON outputs.
+   * **Fallback Intent extraction**: If LLM endpoints are unreachable, a local regex-based parser extracts basic genre and mood targets.
+2. **Dynamic Candidate Retrieval**:
+   * **Primary Path**: Queries the live **TMDb Discover API** and matches vectors in real-time against **Qdrant Cloud** (leveraging cosine similarity on dense embeddings).
+   * **Fallback Path**: If TMDb/Qdrant is down or returns 0 matches, the engine falls back to a **local in-memory retrieval engine** using Polars LazyFrames (filtered over the local 45,433 canonical movie parquet) and a local numpy-based embeddings matrix.
+3. **Local Hybrid Ranking & Scoring**:
+   * Compiles matches using semantic relevance, BM25 exact keyword matches (leveraging a memory-resident `rank-bm25` index), and metadata Jaccard scoring.
+   * Reranks candidates using a weighted formula (55% Semantic + 25% BM25 + 20% Metadata).
+4. **Live Enrichment & Explanations**:
+   * Integrates credits, ratings, trailers, and streaming providers via TMDb.
+   * Runs the parsed search profile against the selected movies to generate natural language explanations highlighting why each movie matches.
 
 ---
 
