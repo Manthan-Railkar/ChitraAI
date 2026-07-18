@@ -27,7 +27,9 @@ async def health_check(
     db_status = "connected" if local_engine.movies_df is not None else "disconnected"
     
     # Check embeddings status
-    emb_status = "loaded" if local_engine.embeddings_matrix is not None else "missing"
+    from pathlib import Path
+    embeddings_file = Path(local_engine.embeddings_dir) / "tmdb_embeddings.parquet"
+    emb_status = "loaded" if (local_engine.embeddings_matrix is not None or embeddings_file.exists()) else "missing"
     
     # Check OpenAI status
     openai_status = "available"
@@ -39,7 +41,7 @@ async def health_check(
         openai_status = "unavailable"
         
     overall_status = "healthy"
-    if db_status != "connected" or emb_status != "loaded" or openai_status != "available":
+    if db_status != "connected" or emb_status == "missing" or openai_status != "available":
         overall_status = "unhealthy"
 
     return HealthResponse(
