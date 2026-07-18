@@ -56,6 +56,8 @@ class ModelManager:
         model_name = settings.EMBEDDING_MODEL
         logger.info(f"Loading SentenceTransformer model '{model_name}' on device '{cls._device}'...")
         try:
+            if model_name == "mock-model" or "mock" in model_name:
+                raise ValueError("Bypassing real SentenceTransformer load for mock model.")
             cls._model = SentenceTransformer(model_name, device=cls._device)
         except Exception as e:
             if is_test_env:

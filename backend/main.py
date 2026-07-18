@@ -168,6 +168,11 @@ async def general_exception_handler(request, exc: Exception):
 
 # CORS Configuration
 allowed_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+for local_origin in ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://127.0.0.1:5173", "http://127.0.0.1:5174", "http://127.0.0.1:5175"]:
+    if local_origin not in allowed_origins:
+        allowed_origins.append(local_origin)
+if not allowed_origins or "*" in allowed_origins:
+    allowed_origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,

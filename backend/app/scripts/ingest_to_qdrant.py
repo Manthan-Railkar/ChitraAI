@@ -32,10 +32,17 @@ def main():
             timeout=30.0
         )
         qdrant_client.get_collections()
-        logger.info("Successfully connected to Qdrant Cloud.")
+        logger.info("Successfully connected to Qdrant.")
     except Exception as e:
-        logger.critical(f"Failed to connect to Qdrant Cloud: {e}")
-        sys.exit(1)
+        logger.warning(f"Failed to connect to Qdrant at {settings.QDRANT_URL}: {e}")
+        logger.warning(f"Falling back to local disk-based Qdrant client at {settings.QDRANT_PATH}...")
+        try:
+            qdrant_client = QdrantClient(path=settings.QDRANT_PATH)
+            qdrant_client.get_collections()
+            logger.info("Successfully initialized local disk-based Qdrant.")
+        except Exception as local_e:
+            logger.critical(f"Failed to initialize local disk-based Qdrant: {local_e}")
+            sys.exit(1)
 
     # 2. Check metadata canonical file
     processed_dir = Path(settings.PROCESSED_DATA_DIR)
@@ -74,15 +81,36 @@ def main():
     embedding_service = EmbeddingService()
     vector_size = embedding_service.get_embedding_dimension()
     
+    exists = False
     try:
         exists = qdrant_client.collection_exists(collection_name=settings.QDRANT_COLLECTION)
+        if exists:
+            info = qdrant_client.get_collection(collection_name=settings.QDRANT_COLLECTION)
+            vectors_cfg = info.config.params.vectors
+            existing_size = getattr(vectors_cfg, 'size', None)
+            if existing_size is None and isinstance(vectors_cfg, dict):
+                for v in vectors_cfg.values():
+                    if hasattr(v, 'size'):
+                        existing_size = v.size
+                        break
+            if existing_size is not None and existing_size != vector_size:
+                logger.warning(f"Vector size mismatch: existing={existing_size}, expected={vector_size}. Recreating collection...")
+                qdrant_client.delete_collection(collection_name=settings.QDRANT_COLLECTION)
+                exists = False
     except Exception as e:
-        logger.warning(f"Error checking collection existence: {e}. Fallback to list check.")
+        logger.warning(f"Error checking collection details: {e}. Checking collection lists...")
         try:
             cols = qdrant_client.get_collections()
             exists = any(c.name == settings.QDRANT_COLLECTION for c in cols.collections)
+            if exists:
+                info = qdrant_client.get_collection(collection_name=settings.QDRANT_COLLECTION)
+                vectors_cfg = info.config.params.vectors
+                existing_size = getattr(vectors_cfg, 'size', None)
+                if existing_size is not None and existing_size != vector_size:
+                    qdrant_client.delete_collection(collection_name=settings.QDRANT_COLLECTION)
+                    exists = False
         except Exception as ex:
-            logger.error(f"Failed to list collections: {ex}. Assuming collection does not exist.")
+            logger.error(f"Failed to check collections: {ex}. Assuming collection does not exist.")
             exists = False
 
     if not exists:

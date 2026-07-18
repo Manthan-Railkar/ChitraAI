@@ -597,21 +597,45 @@ class LocalRetrievalEngine:
                     break
                 except Exception as e:
                     if attempt == 3:
-                        logger.error(f"Failed to connect to Qdrant Cloud after 3 attempts: {e}")
-                        raise e
-                    logger.warning(f"Qdrant Cloud connection failed (attempt {attempt}/3): {e}. Retrying...")
+                        logger.error(f"Failed to connect to Qdrant at {settings.QDRANT_URL} after 3 attempts: {e}")
+                        logger.warning(f"Falling back to local disk-based Qdrant client at {settings.QDRANT_PATH}...")
+                        self.qdrant_client = QdrantClient(path=settings.QDRANT_PATH)
+                        break
+                    logger.warning(f"Qdrant connection failed (attempt {attempt}/3): {e}. Retrying...")
                     time.sleep(1.0 * attempt)
 
-        # 2. Verify collection exists
+        # 2. Verify collection exists and vector size matches
+        vector_size = self.embedding_service.get_embedding_dimension()
+        exists = False
         try:
             exists = self.qdrant_client.collection_exists(collection_name=settings.QDRANT_COLLECTION)
+            if exists:
+                info = self.qdrant_client.get_collection(collection_name=settings.QDRANT_COLLECTION)
+                vectors_cfg = info.config.params.vectors
+                existing_size = getattr(vectors_cfg, 'size', None)
+                if existing_size is None and isinstance(vectors_cfg, dict):
+                    for v in vectors_cfg.values():
+                        if hasattr(v, 'size'):
+                            existing_size = v.size
+                            break
+                if existing_size is not None and existing_size != vector_size:
+                    logger.warning(f"Vector size mismatch: existing={existing_size}, expected={vector_size}. Recreating collection...")
+                    self.qdrant_client.delete_collection(collection_name=settings.QDRANT_COLLECTION)
+                    exists = False
         except Exception as e:
-            logger.warning(f"Error checking collection existence: {e}. Fallback to list check.")
+            logger.warning(f"Error checking collection details: {e}. Checking collection lists...")
             try:
                 cols = self.qdrant_client.get_collections()
                 exists = any(c.name == settings.QDRANT_COLLECTION for c in cols.collections)
+                if exists:
+                    info = self.qdrant_client.get_collection(collection_name=settings.QDRANT_COLLECTION)
+                    vectors_cfg = info.config.params.vectors
+                    existing_size = getattr(vectors_cfg, 'size', None)
+                    if existing_size is not None and existing_size != vector_size:
+                        self.qdrant_client.delete_collection(collection_name=settings.QDRANT_COLLECTION)
+                        exists = False
             except Exception as ex:
-                logger.error(f"Failed to list collections: {ex}. Assuming collection does not exist.")
+                logger.error(f"Failed to check collections: {ex}. Assuming collection does not exist.")
                 exists = False
 
         if not exists:
@@ -619,7 +643,7 @@ class LocalRetrievalEngine:
             self.qdrant_client.create_collection(
                 collection_name=settings.QDRANT_COLLECTION,
                 vectors_config=models.VectorParams(
-                    size=self.embedding_service.get_embedding_dimension(),
+                    size=vector_size,
                     distance=models.Distance.COSINE
                 )
             )
