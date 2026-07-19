@@ -289,14 +289,6 @@ The recommendation pipeline runs through these stages, optimized for speed and r
 
 ---
 
-## Deployment
-
-* **Frontend**: Deployed on **Vercel** with global edge optimization.
-* **Backend**: Deployed on **Render** (monitored and optimized to run startup memory under **238 MB** RSS, remaining safely below Render's Free 512 MB ceiling).
-* **Vector Database**: Deployed on a managed **Qdrant Cloud** instance.
-
----
-
 ## Future Improvements
 
 * **Collaborative Filtering Hybridization**: Integrating user watchlist/history tracking with an ALS matrix factorization model to inject collaborative data.
